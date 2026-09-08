@@ -5,7 +5,7 @@ import FeatureCard from '../components/FeatureCard'
 import HeroTerminal from '../components/HeroTerminal'
 import MarketCard from '../components/MarketCard'
 import PriceTicker from '../components/PriceTicker'
-import { useMarketPrices } from '../hooks/useMarketPrices'
+import { useMarketData } from '../context/MarketDataContext'
 import { STARTING_VIRTUAL_BALANCE, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
 
 const FEATURES = [
@@ -33,7 +33,7 @@ const FEATURES = [
 ]
 
 export default function Landing() {
-  const { prices, btcHistory, loading, error } = useMarketPrices()
+  const { prices, btcHistory, loading, error } = useMarketData()
   const btc = prices.find((coin) => coin.symbol === 'BTC')
 
   const stats = [

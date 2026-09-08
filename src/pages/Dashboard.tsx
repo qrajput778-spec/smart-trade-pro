@@ -1,13 +1,17 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { doc, onSnapshot } from 'firebase/firestore'
-import { LineChart, Layers, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import { doc, increment, onSnapshot, updateDoc } from 'firebase/firestore'
+import { Area, AreaChart, ResponsiveContainer, YAxis } from 'recharts'
+import { ArrowDownCircle, ArrowUpCircle, PlusCircle, RotateCcw } from 'lucide-react'
 import Card from '../components/Card'
 import Button from '../components/Button'
+import Badge from '../components/Badge'
+import MarketCard from '../components/MarketCard'
+import WatchlistTable from '../components/WatchlistTable'
 import { useAuth } from '../context/AuthContext'
-import { useMarketPrices } from '../hooks/useMarketPrices'
+import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
-import { formatUsd } from '../lib/constants'
+import { ADD_VIRTUAL_FUNDS_AMOUNT, STARTING_VIRTUAL_BALANCE, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
 import type { HoldingsMap } from '../types'
 
 interface AccountSnapshot {
@@ -16,13 +20,24 @@ interface AccountSnapshot {
   holdings: HoldingsMap
 }
 
+type PendingAction = 'add-funds' | 'reset' | null
+
+// Flat sparkline of the current portfolio value — we don't track portfolio
+// value history yet, so this deliberately shows a flat line rather than
+// faking a growth curve. TODO: replace with real history once a Firestore
+// collection records portfolio value snapshots over time.
+const HISTORY_PLACEHOLDER_POINTS = 12
+
 export default function Dashboard() {
   const { user } = useAuth()
-  const { prices, loading: pricesLoading } = useMarketPrices()
+  const { prices, loading: pricesLoading } = useMarketData()
 
   const [account, setAccount] = useState<AccountSnapshot | null>(null)
   const [accountLoading, setAccountLoading] = useState(true)
   const [accountError, setAccountError] = useState<string | null>(null)
+
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -33,8 +48,8 @@ export default function Dashboard() {
       return
     }
 
-    // Live subscription (not a one-time get) so balance/holdings changes made
-    // elsewhere (e.g. a future Trade page) show up here immediately.
+    // Live subscription (not a one-time get) so balance/holdings changes —
+    // including the quick actions below — reflect here immediately.
     const unsubscribe = onSnapshot(
       doc(db, 'users', user.uid),
       (snapshot) => {
@@ -57,6 +72,53 @@ export default function Dashboard() {
 
     return unsubscribe
   }, [user])
+
+  async function handleAddFunds() {
+    if (!user || !db) return
+    const amountLabel = formatUsd(ADD_VIRTUAL_FUNDS_AMOUNT, { maximumFractionDigits: 0 })
+    if (!window.confirm(`Add ${amountLabel} in virtual funds to your balance?`)) return
+
+    setPendingAction('add-funds')
+    setActionError(null)
+    try {
+      // Firestore field update only — no payment provider, no real transfer.
+      await updateDoc(doc(db, 'users', user.uid), {
+        balance: increment(ADD_VIRTUAL_FUNDS_AMOUNT),
+      })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[dashboard] add funds failed', err)
+      setActionError('Could not add virtual funds — please try again.')
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handleResetPortfolio() {
+    if (!user || !db) return
+    if (
+      !window.confirm(
+        'Reset your portfolio? This sets your balance back to the starting amount and clears all holdings. This cannot be undone.',
+      )
+    ) {
+      return
+    }
+
+    setPendingAction('reset')
+    setActionError(null)
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        balance: STARTING_VIRTUAL_BALANCE,
+        holdings: {},
+      })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[dashboard] reset portfolio failed', err)
+      setActionError('Could not reset your portfolio — please try again.')
+    } finally {
+      setPendingAction(null)
+    }
+  }
 
   if (accountLoading) {
     return (
@@ -94,18 +156,26 @@ export default function Dashboard() {
     const costBasis = holding.qty * holding.avgBuyPrice
     const currentValue = priceKnown ? holding.qty * currentPrice : null
     const pnlAbs = currentValue !== null ? currentValue - costBasis : null
-    const pnlPct = pnlAbs !== null && costBasis > 0 ? (pnlAbs / costBasis) * 100 : null
-    return { symbol, holding, currentPrice, currentValue, pnlAbs, pnlPct, priceKnown }
+    return { symbol, holding, currentValue, pnlAbs, change24h: coin?.change24h ?? 0, priceKnown }
   })
 
   const knownRows = rows.filter((row) => row.priceKnown)
-  // Only block the summary stats on price loading while there's actually a
-  // holding whose price we don't have yet — an empty portfolio never waits.
   const summaryPending = rows.length > 0 && knownRows.length < rows.length && pricesLoading
 
   const holdingsValue = knownRows.reduce((sum, row) => sum + (row.currentValue ?? 0), 0)
-  const totalPnl = knownRows.reduce((sum, row) => sum + (row.pnlAbs ?? 0), 0)
   const totalPortfolioValue = account.balance + holdingsValue
+
+  // "Today's" change: cash never moves, so this is the real 24h change of
+  // each holding weighted by how much of the portfolio it makes up — not a
+  // fabricated number, just a value-weighted average of live 24h changes.
+  const weightedChangePct =
+    summaryPending || totalPortfolioValue <= 0
+      ? null
+      : (knownRows.reduce((sum, row) => sum + (row.currentValue ?? 0) * row.change24h, 0) / totalPortfolioValue)
+
+  const portfolioHistory = summaryPending
+    ? []
+    : Array.from({ length: HISTORY_PLACEHOLDER_POINTS }, (_, i) => ({ point: i, value: totalPortfolioValue }))
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -116,138 +186,135 @@ export default function Dashboard() {
         <p className="mt-1 text-sm text-text-muted">{today}</p>
       </header>
 
-      <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <SummaryCard icon={<Wallet size={16} />} label="Virtual Cash Balance" value={formatUsd(account.balance)} />
-        <SummaryCard
-          icon={<Layers size={16} />}
-          label="Total Portfolio Value"
-          value={summaryPending ? null : formatUsd(totalPortfolioValue)}
-        />
-        <SummaryCard
-          icon={totalPnl >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-          label="Total Unrealized P&L"
-          value={summaryPending ? null : `${totalPnl >= 0 ? '+' : ''}${formatUsd(totalPnl)}`}
-          tone={summaryPending ? undefined : totalPnl >= 0 ? 'success' : 'danger'}
-        />
-        <SummaryCard icon={<LineChart size={16} />} label="Open Positions" value={String(holdingEntries.length)} />
+      <div className="mt-8 grid gap-4 lg:grid-cols-3">
+        {/* Total Portfolio Value hero card */}
+        <Card className="lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-wide text-text-muted">Total Portfolio Value</span>
+            <Badge tone={weightedChangePct === null ? 'neutral' : weightedChangePct >= 0 ? 'success' : 'danger'}>
+              {weightedChangePct === null
+                ? '— today'
+                : `${weightedChangePct >= 0 ? '+' : ''}${weightedChangePct.toFixed(2)}% today`}
+            </Badge>
+          </div>
+
+          {summaryPending ? (
+            <div className="mt-2 h-9 w-48 animate-pulse rounded bg-surface-alt" />
+          ) : (
+            <p className="mt-2 font-mono text-3xl text-text-primary">{formatUsd(totalPortfolioValue)}</p>
+          )}
+
+          <div className="mt-4 h-24">
+            {portfolioHistory.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={portfolioHistory} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="portfolioSparkline" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#FFD700" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="#FFD700" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <YAxis hide domain={['dataMin - 1', 'dataMax + 1']} />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#FFD700"
+                    strokeWidth={2}
+                    fill="url(#portfolioSparkline)"
+                    isAnimationActive={false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center font-mono text-xs text-text-muted">
+                Loading…
+              </div>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-text-muted">
+            Portfolio value history isn't tracked yet, so this shows a flat line at your current
+            value (TODO: chart real history once snapshots are recorded).
+          </p>
+
+          <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4">
+            <MiniStat label="Available Cash" value={formatUsd(account.balance)} />
+            <MiniStat label="Invested" value={summaryPending ? null : formatUsd(holdingsValue)} />
+            <MiniStat label="Buying Power" value={formatUsd(account.balance)} />
+          </div>
+        </Card>
+
+        {/* Quick Actions */}
+        <Card className="flex flex-col">
+          <span className="text-xs uppercase tracking-wide text-text-muted">Quick Actions</span>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <Link to="/markets">
+              <Button variant="primary" className="flex w-full items-center justify-center gap-2">
+                <ArrowUpCircle size={16} /> Buy
+              </Button>
+            </Link>
+            <Link to="/markets">
+              <Button variant="secondary" className="flex w-full items-center justify-center gap-2">
+                <ArrowDownCircle size={16} /> Sell
+              </Button>
+            </Link>
+            <Button
+              variant="secondary"
+              className="flex w-full items-center justify-center gap-2"
+              onClick={handleAddFunds}
+              disabled={pendingAction !== null}
+            >
+              <PlusCircle size={16} />
+              {pendingAction === 'add-funds' ? 'Adding…' : 'Add Virtual Funds'}
+            </Button>
+            <Button
+              variant="secondary"
+              className="flex w-full items-center justify-center gap-2 text-danger hover:border-danger"
+              onClick={handleResetPortfolio}
+              disabled={pendingAction !== null}
+            >
+              <RotateCcw size={16} />
+              {pendingAction === 'reset' ? 'Resetting…' : 'Reset Portfolio'}
+            </Button>
+          </div>
+          {actionError && <p className="mt-3 text-xs text-danger">{actionError}</p>}
+          <p className="mt-auto pt-4 text-[11px] text-text-muted">
+            Buy/Sell open the trading terminal once you pick a market — order execution isn't
+            built yet.
+          </p>
+        </Card>
       </div>
 
+      {/* Market Overview */}
       <section className="mt-10">
-        <h2 className="text-lg font-semibold text-text-primary">Holdings</h2>
-
-        {holdingEntries.length === 0 ? (
-          <Card className="mt-4 flex flex-col items-center gap-3 py-12 text-center">
-            <p className="max-w-sm text-text-muted">
-              You don't have any open positions yet — every balance here is simulated.
-            </p>
-            <Link to="/markets">
-              <Button variant="primary">Explore markets to place your first trade</Button>
-            </Link>
-          </Card>
-        ) : (
-          <Card className="mt-4 overflow-x-auto p-0">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
-                  <th className="px-4 py-3 font-medium">Symbol</th>
-                  <th className="px-4 py-3 font-medium">Qty</th>
-                  <th className="px-4 py-3 font-medium">Avg Buy Price</th>
-                  <th className="px-4 py-3 font-medium">Current Price</th>
-                  <th className="px-4 py-3 font-medium">Current Value</th>
-                  <th className="px-4 py-3 font-medium">P&amp;L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.symbol} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3 font-mono font-semibold text-text-primary">{row.symbol}</td>
-                    <td className="px-4 py-3 font-mono text-text-primary">{row.holding.qty}</td>
-                    <td className="px-4 py-3 font-mono text-text-primary">
-                      {formatUsd(row.holding.avgBuyPrice)}
-                    </td>
-                    {row.priceKnown ? (
-                      <>
-                        <td className="px-4 py-3 font-mono text-text-primary">
-                          {formatUsd(row.currentPrice)}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-text-primary">
-                          {formatUsd(row.currentValue ?? 0)}
-                        </td>
-                        <td
-                          className={`px-4 py-3 font-mono ${
-                            (row.pnlAbs ?? 0) >= 0 ? 'text-success' : 'text-danger'
-                          }`}
-                        >
-                          {(row.pnlAbs ?? 0) >= 0 ? '+' : ''}
-                          {formatUsd(row.pnlAbs ?? 0)}{' '}
-                          {row.pnlPct !== null && (
-                            <span className="text-xs">
-                              ({row.pnlPct >= 0 ? '+' : ''}
-                              {row.pnlPct.toFixed(2)}%)
-                            </span>
-                          )}
-                        </td>
-                      </>
-                    ) : (
-                      <td colSpan={3} className="px-4 py-3">
-                        <div className="h-4 w-full max-w-[200px] animate-pulse rounded bg-surface-alt" />
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-        )}
+        <h2 className="text-lg font-semibold text-text-primary">Market Overview</h2>
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {TRACKED_SYMBOLS.map((symbol) => {
+            const coin = prices.find((price) => price.symbol === symbol)
+            return <MarketCard key={symbol} coin={coin} loading={pricesLoading || !coin} />
+          })}
+        </div>
       </section>
 
-      <section className="mt-10 grid gap-4 sm:grid-cols-2">
-        <Link to="/markets">
-          <Card className="flex items-center justify-between transition-colors hover:border-accent-gold/40">
-            <div>
-              <p className="font-semibold text-text-primary">View Markets</p>
-              <p className="mt-1 text-sm text-text-muted">Check live prices across tracked coins.</p>
-            </div>
-            <LineChart size={20} className="text-accent-gold" />
-          </Card>
-        </Link>
-        <Link to="/portfolio">
-          <Card className="flex items-center justify-between transition-colors hover:border-accent-gold/40">
-            <div>
-              <p className="font-semibold text-text-primary">Portfolio</p>
-              <p className="mt-1 text-sm text-text-muted">Review your full position history.</p>
-            </div>
-            <Wallet size={20} className="text-accent-gold" />
-          </Card>
-        </Link>
+      {/* My Watchlist */}
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold text-text-primary">My Watchlist</h2>
+        <Card className="mt-4 p-0">
+          <WatchlistTable prices={prices} loading={pricesLoading} />
+        </Card>
       </section>
     </div>
   )
 }
 
-function SummaryCard({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: ReactNode
-  label: string
-  value: string | null
-  tone?: 'success' | 'danger'
-}) {
-  const toneClass = tone === 'success' ? 'text-success' : tone === 'danger' ? 'text-danger' : 'text-text-primary'
+function MiniStat({ label, value }: { label: string; value: string | null }) {
   return (
-    <Card>
-      <div className="flex items-center gap-2 text-text-muted">
-        {icon}
-        <span className="text-xs uppercase tracking-wide">{label}</span>
-      </div>
+    <div className="rounded-md border border-border bg-surface-alt px-3 py-2">
+      <p className="text-[10px] uppercase tracking-wide text-text-muted">{label}</p>
       {value === null ? (
-        <div className="mt-3 h-6 w-20 animate-pulse rounded bg-surface-alt" />
+        <div className="mt-1.5 h-4 w-16 animate-pulse rounded bg-surface" />
       ) : (
-        <p className={`mt-2 font-mono text-xl ${toneClass}`}>{value}</p>
+        <p className="mt-1 font-mono text-sm text-text-primary">{value}</p>
       )}
-    </Card>
+    </div>
   )
 }

@@ -3,6 +3,9 @@
 /** Starting virtual balance every new simulated account is seeded with. */
 export const STARTING_VIRTUAL_BALANCE = 10_000
 
+/** Fixed top-up amount for the Dashboard's "Add Virtual Funds" quick action. */
+export const ADD_VIRTUAL_FUNDS_AMOUNT = 1_000
+
 export const TRACKED_SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB'] as const
 
 export function formatUsd(value: number, options?: Intl.NumberFormatOptions): string {
