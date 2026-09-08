@@ -7,24 +7,20 @@ export interface User {
   displayName: string | null
 }
 
-export interface Holding {
-  symbol: string
-  quantity: number
-  averageCost: number
+/** One open position within a user's holdings map, keyed by ticker symbol (e.g. "BTC"). */
+export interface HoldingEntry {
+  qty: number
+  avgBuyPrice: number
 }
 
-export interface Portfolio {
-  userId: string
-  cashBalance: number
-  holdings: Holding[]
-}
+export type HoldingsMap = Record<string, HoldingEntry>
 
 /** Shape of the Firestore document at users/{uid}, created on signup. */
 export interface UserAccountDocument {
   displayName: string
   email: string
   balance: number
-  holdings: Record<string, Holding>
+  holdings: HoldingsMap
   // Firestore serverTimestamp() resolves to a Timestamp once read back.
   createdAt: unknown
 }
