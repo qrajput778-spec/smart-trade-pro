@@ -7,10 +7,14 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
 import MarketCard from '../components/MarketCard'
+import MiniStat from '../components/MiniStat'
+import PageContainer from '../components/PageContainer'
 import WatchlistTable from '../components/WatchlistTable'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
+import { usePortfolioSnapshots } from '../hooks/usePortfolioSnapshots'
+import { summarizeHoldings } from '../lib/portfolioMath'
 import { ADD_VIRTUAL_FUNDS_AMOUNT, STARTING_VIRTUAL_BALANCE, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
 import type { HoldingsMap } from '../types'
 
@@ -22,15 +26,15 @@ interface AccountSnapshot {
 
 type PendingAction = 'add-funds' | 'reset' | null
 
-// Flat sparkline of the current portfolio value — we don't track portfolio
-// value history yet, so this deliberately shows a flat line rather than
-// faking a growth curve. TODO: replace with real history once a Firestore
-// collection records portfolio value snapshots over time.
-const HISTORY_PLACEHOLDER_POINTS = 12
+// A brand-new account (or one with a single trade) has fewer than 2 real
+// snapshots — a flat line at the current value is genuinely accurate there,
+// not a placeholder standing in for data we don't have.
+const FLAT_LINE_POINTS = 12
 
 export default function Dashboard() {
   const { user } = useAuth()
   const { prices, loading: pricesLoading } = useMarketData()
+  const { snapshots } = usePortfolioSnapshots(user?.uid)
 
   const [account, setAccount] = useState<AccountSnapshot | null>(null)
   const [accountLoading, setAccountLoading] = useState(true)
@@ -147,22 +151,10 @@ export default function Dashboard() {
     day: 'numeric',
   })
 
-  const holdingEntries = Object.entries(account.holdings)
+  // Shared with Portfolio.tsx so the two pages can never silently disagree
+  // on what "current value" or "unrealized P&L" means.
+  const { knownRows, pending: summaryPending, holdingsValue } = summarizeHoldings(account.holdings, prices)
 
-  const rows = holdingEntries.map(([symbol, holding]) => {
-    const coin = prices.find((price) => price.symbol === symbol)
-    const priceKnown = Boolean(coin && coin.price > 0)
-    const currentPrice = coin?.price ?? 0
-    const costBasis = holding.qty * holding.avgBuyPrice
-    const currentValue = priceKnown ? holding.qty * currentPrice : null
-    const pnlAbs = currentValue !== null ? currentValue - costBasis : null
-    return { symbol, holding, currentValue, pnlAbs, change24h: coin?.change24h ?? 0, priceKnown }
-  })
-
-  const knownRows = rows.filter((row) => row.priceKnown)
-  const summaryPending = rows.length > 0 && knownRows.length < rows.length && pricesLoading
-
-  const holdingsValue = knownRows.reduce((sum, row) => sum + (row.currentValue ?? 0), 0)
   const totalPortfolioValue = account.balance + holdingsValue
 
   // "Today's" change: cash never moves, so this is the real 24h change of
@@ -175,10 +167,12 @@ export default function Dashboard() {
 
   const portfolioHistory = summaryPending
     ? []
-    : Array.from({ length: HISTORY_PLACEHOLDER_POINTS }, (_, i) => ({ point: i, value: totalPortfolioValue }))
+    : snapshots.length >= 2
+      ? snapshots.map((point) => ({ point: point.id, value: point.totalValue }))
+      : Array.from({ length: FLAT_LINE_POINTS }, (_, i) => ({ point: String(i), value: totalPortfolioValue }))
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
+    <PageContainer>
       <header>
         <h1 className="text-2xl font-semibold text-text-primary">
           Welcome back, {account.displayName}
@@ -232,8 +226,9 @@ export default function Dashboard() {
             )}
           </div>
           <p className="mt-1 text-[11px] text-text-muted">
-            Portfolio value history isn't tracked yet, so this shows a flat line at your current
-            value (TODO: chart real history once snapshots are recorded).
+            {snapshots.length >= 2
+              ? 'Real portfolio value at each of your trades.'
+              : "You don't have enough trade history yet for a real chart, so this shows a flat line at your current value."}
           </p>
 
           <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4">
@@ -287,7 +282,7 @@ export default function Dashboard() {
       {/* Market Overview */}
       <section className="mt-10">
         <h2 className="text-lg font-semibold text-text-primary">Market Overview</h2>
-        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
           {TRACKED_SYMBOLS.map((symbol) => {
             const coin = prices.find((price) => price.symbol === symbol)
             return <MarketCard key={symbol} coin={coin} loading={pricesLoading || !coin} />
@@ -302,19 +297,6 @@ export default function Dashboard() {
           <WatchlistTable prices={prices} loading={pricesLoading} />
         </Card>
       </section>
-    </div>
-  )
-}
-
-function MiniStat({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="rounded-md border border-border bg-surface-alt px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wide text-text-muted">{label}</p>
-      {value === null ? (
-        <div className="mt-1.5 h-4 w-16 animate-pulse rounded bg-surface" />
-      ) : (
-        <p className="mt-1 font-mono text-sm text-text-primary">{value}</p>
-      )}
-    </div>
+    </PageContainer>
   )
 }

@@ -3,11 +3,13 @@ import {
   ChevronLeft,
   Compass,
   LayoutDashboard,
+  LifeBuoy,
   LineChart,
   PieChart,
   Settings,
   Star,
   TrendingUp,
+  Wallet,
 } from 'lucide-react'
 
 interface NavItem {
@@ -21,7 +23,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Markets', to: '/markets', icon: Compass },
   { label: 'Trading Terminal', to: '/trade', icon: TrendingUp },
   { label: 'Portfolio', to: '/portfolio', icon: PieChart },
+  { label: 'Wallet', to: '/wallet', icon: Wallet },
   { label: 'Watchlist', to: '/watchlist', icon: Star },
+  { label: 'Support', to: '/support', icon: LifeBuoy },
   { label: 'Settings', to: '/settings', icon: Settings },
 ]
 

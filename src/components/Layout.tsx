@@ -23,11 +23,15 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-text-primary">
+    <div className="flex min-h-screen w-full bg-background text-text-primary">
       <Sidebar />
+      {/* min-w-0 is load-bearing here: without it, a flex child won't shrink
+          below its content's intrinsic width, which can quietly force this
+          column (and everything in it) wider than the space actually left
+          next to the fixed-width sidebar. */}
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="flex-1">{children}</main>
+        <main className="w-full flex-1">{children}</main>
       </div>
     </div>
   )

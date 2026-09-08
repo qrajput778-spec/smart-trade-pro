@@ -23,7 +23,7 @@ export default function MarketCard({ coin, loading }: MarketCardProps) {
   const isUp = coin.change24h >= 0
 
   return (
-    <Link to={`/trade/${coin.symbol.toLowerCase()}`}>
+    <Link to={`/trade/${coin.symbol}`}>
       <Card className="hover:border-accent-gold/40 transition-colors h-full">
         <div className="flex items-center justify-between">
           <span className="font-mono text-sm font-semibold text-text-primary">{coin.symbol}</span>

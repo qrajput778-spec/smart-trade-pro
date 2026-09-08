@@ -11,7 +11,9 @@ import Markets from './pages/Markets'
 import TradeIndex from './pages/TradeIndex'
 import Trade from './pages/Trade'
 import Portfolio from './pages/Portfolio'
+import WalletPage from './pages/Wallet'
 import Watchlist from './pages/Watchlist'
+import Support from './pages/Support'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -65,10 +67,26 @@ export default function App() {
                 }
               />
               <Route
+                path="/wallet"
+                element={
+                  <ProtectedRoute>
+                    <WalletPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/watchlist"
                 element={
                   <ProtectedRoute>
                     <Watchlist />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/support"
+                element={
+                  <ProtectedRoute>
+                    <Support />
                   </ProtectedRoute>
                 }
               />
