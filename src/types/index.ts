@@ -18,3 +18,13 @@ export interface Portfolio {
   cashBalance: number
   holdings: Holding[]
 }
+
+/** Shape of the Firestore document at users/{uid}, created on signup. */
+export interface UserAccountDocument {
+  displayName: string
+  email: string
+  balance: number
+  holdings: Record<string, Holding>
+  // Firestore serverTimestamp() resolves to a Timestamp once read back.
+  createdAt: unknown
+}
