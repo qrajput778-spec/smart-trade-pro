@@ -8,7 +8,8 @@ import PageContainer from '../components/PageContainer'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
-import { ADD_VIRTUAL_FUNDS_AMOUNT, STARTING_VIRTUAL_BALANCE, formatUsd } from '../lib/constants'
+import { resetPortfolio } from '../lib/trading'
+import { ADD_VIRTUAL_FUNDS_AMOUNT, formatUsd } from '../lib/constants'
 import type { HoldingsMap } from '../types'
 
 interface TransactionRow {
@@ -123,10 +124,7 @@ export default function Wallet() {
     setPendingAction('reset')
     setActionError(null)
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        balance: STARTING_VIRTUAL_BALANCE,
-        holdings: {},
-      })
+      await resetPortfolio(user.uid)
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[wallet] reset portfolio failed', err)
@@ -193,8 +191,8 @@ export default function Wallet() {
               {pendingAction === 'add-funds' ? 'Adding…' : 'Add Virtual Funds'}
             </Button>
             <Button
-              variant="secondary"
-              className="flex items-center justify-center gap-2 text-danger hover:border-danger"
+              variant="danger"
+              className="flex items-center justify-center gap-2"
               onClick={handleResetPortfolio}
               disabled={pendingAction !== null}
             >

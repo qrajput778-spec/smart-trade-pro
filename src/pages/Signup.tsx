@@ -59,6 +59,9 @@ export default function Signup() {
 
       await updateProfile(credential.user, { displayName: trimmedName })
 
+      // isAdmin is deliberately never written here (or anywhere client-side)
+      // — it's absent by default and only ever flipped by hand in the
+      // Firestore console for a specific account.
       await setDoc(doc(db, 'users', credential.user.uid), {
         displayName: trimmedName,
         email,

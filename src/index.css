@@ -10,8 +10,33 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Dark theme (default) */
+    --color-background: #050607;
+    --color-surface: #101316;
+    --color-surface-alt: #15191d;
+    --color-border: #252a2e;
+    --color-text-primary: #ffffff;
+    --color-text-muted: #92989e;
+  }
+
+  /* Light theme — same token names, different values, set by ThemeContext
+     via data-theme on <html> and persisted to localStorage. */
+  [data-theme='light'] {
+    --color-background: #f7f7f5;
+    --color-surface: #ffffff;
+    --color-surface-alt: #f1f1ef;
+    --color-border: #e2e2e0;
+    --color-text-primary: #16181a;
+    --color-text-muted: #6b7280;
+  }
+
   html {
     color-scheme: dark;
+  }
+
+  html[data-theme='light'] {
+    color-scheme: light;
   }
 
   body {

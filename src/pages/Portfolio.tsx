@@ -217,11 +217,11 @@ export default function Portfolio() {
                     </Pie>
                     <Tooltip
                       contentStyle={{
-                        background: '#101316',
-                        border: '1px solid #252a2e',
+                        background: 'var(--color-surface)',
+                        border: '1px solid var(--color-border)',
                         borderRadius: 8,
                         fontSize: 12,
-                        color: '#ffffff',
+                        color: 'var(--color-text-primary)',
                       }}
                       formatter={(value) => formatUsd(Number(value))}
                     />

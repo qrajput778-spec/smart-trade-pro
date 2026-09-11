@@ -14,6 +14,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth/network-request-failed': 'Network error — check your connection and try again.',
   'auth/operation-not-allowed':
     'Email/password sign-in is not enabled for this project yet — enable it in the Firebase console.',
+  'auth/requires-recent-login': 'For security, please sign in again before making this change.',
 }
 
 /** Turns a thrown Firebase Auth error into a plain-language message safe to show a user. */

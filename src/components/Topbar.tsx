@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { Bell, LogOut, Moon, Search } from 'lucide-react'
+import { Bell, LogOut, Moon, Search, Sun } from 'lucide-react'
 import PriceTicker from './PriceTicker'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
+import { useTheme } from '../context/ThemeContext'
 import { auth } from '../lib/firebase'
 
 export default function Topbar() {
   const { user } = useAuth()
   const { prices, loading } = useMarketData()
+  const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -49,11 +51,12 @@ export default function Topbar() {
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
+            onClick={toggleTheme}
             className="rounded-md p-2 text-text-muted transition-colors hover:text-text-primary"
             aria-label="Toggle theme"
-            title="Theme toggle (coming soon)"
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            <Moon size={18} />
+            {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
           <button
             type="button"

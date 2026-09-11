@@ -6,8 +6,9 @@
 // read-then-write) so a price/balance change between page load and clicking
 // Execute can't produce a stale, incorrect write.
 
-import { collection, deleteField, doc, increment, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { collection, deleteField, doc, increment, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from './firebase'
+import { STARTING_VIRTUAL_BALANCE } from './constants'
 import type { HoldingsMap } from '../types'
 
 export type OrderSide = 'buy' | 'sell'
@@ -216,4 +217,20 @@ export async function executeSellOrder(
   })
 
   return { symbol, qty: roundedQty, price: roundedPrice, total, realizedPnl }
+}
+
+/**
+ * Resets a user's simulated portfolio back to day-one state: starting cash,
+ * no holdings, no accumulated realized P&L. Shared by Dashboard, Wallet, and
+ * Settings so there's exactly one implementation of "reset" to keep correct.
+ * Trade/transaction history is left in place — this only touches the
+ * account's current balance/holdings/P&L, not its past record.
+ */
+export async function resetPortfolio(uid: string): Promise<void> {
+  const firestore = requireDb()
+  await updateDoc(doc(firestore, 'users', uid), {
+    balance: STARTING_VIRTUAL_BALANCE,
+    holdings: {},
+    totalRealizedPnl: 0,
+  })
 }

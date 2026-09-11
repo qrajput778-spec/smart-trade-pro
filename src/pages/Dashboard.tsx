@@ -15,7 +15,8 @@ import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
 import { usePortfolioSnapshots } from '../hooks/usePortfolioSnapshots'
 import { summarizeHoldings } from '../lib/portfolioMath'
-import { ADD_VIRTUAL_FUNDS_AMOUNT, STARTING_VIRTUAL_BALANCE, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
+import { resetPortfolio } from '../lib/trading'
+import { ADD_VIRTUAL_FUNDS_AMOUNT, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
 import type { HoldingsMap } from '../types'
 
 interface AccountSnapshot {
@@ -111,10 +112,7 @@ export default function Dashboard() {
     setPendingAction('reset')
     setActionError(null)
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        balance: STARTING_VIRTUAL_BALANCE,
-        holdings: {},
-      })
+      await resetPortfolio(user.uid)
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[dashboard] reset portfolio failed', err)
@@ -262,8 +260,8 @@ export default function Dashboard() {
               {pendingAction === 'add-funds' ? 'Adding…' : 'Add Virtual Funds'}
             </Button>
             <Button
-              variant="secondary"
-              className="flex w-full items-center justify-center gap-2 text-danger hover:border-danger"
+              variant="danger"
+              className="flex w-full items-center justify-center gap-2"
               onClick={handleResetPortfolio}
               disabled={pendingAction !== null}
             >

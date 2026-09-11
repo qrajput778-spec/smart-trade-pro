@@ -23,4 +23,32 @@ export interface UserAccountDocument {
   holdings: HoldingsMap
   // Firestore serverTimestamp() resolves to a Timestamp once read back.
   createdAt: unknown
+  totalRealizedPnl?: number
+  /**
+   * Grants access to /admin/*. Defaults to false/absent for every account.
+   * No client code ever sets this — it's only ever flipped by hand in the
+   * Firestore console. AdminRoute/Sidebar only ever *read* it.
+   */
+  isAdmin?: boolean
+}
+
+/** One executed Buy/Sell, at users/{uid}/transactions/{id}. */
+export interface TransactionDoc {
+  type: 'buy' | 'sell'
+  symbol: string
+  qty: number
+  price: number
+  total: number
+  realizedPnl?: number
+  timestamp: unknown
+}
+
+/** One accountability record for an admin balance adjustment, at adminActions/{id}. */
+export interface AdminActionDoc {
+  adminUid: string
+  targetUid: string
+  previousBalance: number
+  newBalance: number
+  reason: string
+  timestamp: unknown
 }

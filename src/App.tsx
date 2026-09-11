@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { MarketDataProvider } from './context/MarketDataContext'
+import { ThemeProvider } from './context/ThemeContext'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -15,11 +17,16 @@ import WalletPage from './pages/Wallet'
 import Watchlist from './pages/Watchlist'
 import Support from './pages/Support'
 import Settings from './pages/Settings'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminUsers from './pages/admin/AdminUsers'
+import AdminUserDetail from './pages/admin/AdminUserDetail'
+import AdminTrades from './pages/admin/AdminTrades'
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MarketDataProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <MarketDataProvider>
         <BrowserRouter>
           <Layout>
             <Routes>
@@ -98,10 +105,43 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/admin"
+                element={
+                  <AdminRoute>
+                    <AdminDashboard />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/users"
+                element={
+                  <AdminRoute>
+                    <AdminUsers />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/users/:uid"
+                element={
+                  <AdminRoute>
+                    <AdminUserDetail />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/trades"
+                element={
+                  <AdminRoute>
+                    <AdminTrades />
+                  </AdminRoute>
+                }
+              />
             </Routes>
           </Layout>
         </BrowserRouter>
-      </MarketDataProvider>
-    </AuthProvider>
+        </MarketDataProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }

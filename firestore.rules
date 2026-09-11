@@ -1,0 +1,140 @@
+rules_version = '2';
+
+// Firestore security rules for SMART TRADE PRO.
+//
+// Schema verified directly against the app code before writing this file
+// (src/lib/trading.ts, src/lib/account.ts, src/pages/Signup.tsx,
+// src/pages/Support.tsx):
+//
+//   users/{uid}                          — profile + balance + holdings +
+//                                           totalRealizedPnl. Created once on
+//                                           signup (setDoc), then updated by
+//                                           Buy/Sell/Reset/profile-save, and
+//                                           deleted during account deletion.
+//                                           Always the signed-in user's own
+//                                           doc — the app never reads or
+//                                           writes another user's uid.
+//   users/{uid}/transactions/{id}        — one doc per executed Buy/Sell,
+//                                           written with an auto-generated id
+//                                           inside the same transaction as
+//                                           the balance/holdings update.
+//                                           Never updated afterward (an
+//                                           immutable trade ledger). Read via
+//                                           onSnapshot/getDocs on Wallet, and
+//                                           bulk-deleted only during account
+//                                           deletion.
+//   users/{uid}/portfolioSnapshots/{id}  — same lifecycle as transactions:
+//                                           create-once per trade, read for
+//                                           the Dashboard/Portfolio value
+//                                           charts, deleted on account
+//                                           deletion. Never updated.
+//   supportMessages/{id}                 — contact-form submissions
+//                                           (addDoc with an auto id). The app
+//                                           has no admin UI that reads these
+//                                           back, so no client ever needs
+//                                           read access.
+//   users/{uid}.isAdmin                  — DRAFT (see below). Boolean, absent/
+//                                           false by default, never written by
+//                                           any client code — only ever set by
+//                                           hand in the Firestore console.
+//   adminActions/{id}                    — DRAFT. Accountability log for the
+//                                           admin "Adjust Virtual Balance"
+//                                           tool (src/lib/admin.ts): addDoc
+//                                           with an auto id, one entry per
+//                                           balance adjustment.
+//
+// Everything not explicitly matched below is denied by default.
+//
+// The isAdmin()-gated rules below (users/{uid} admin read/update,
+// {path=**}/transactions collection-group read, adminActions) are a DRAFT
+// for the new /admin area and have NOT been deployed — per instructions,
+// only the file has been updated. Deploy the same way as before (Firebase
+// console → Firestore Database → Rules → paste this file → Publish) once
+// ready, and set up the collection-group index called out below first.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // --- DRAFT — not yet deployed (see below) ---
+    // True only for the specific account(s) manually flipped to isAdmin:
+    // true in the Firestore console — no client code ever sets this field,
+    // so a user can't grant themselves admin access by writing their own doc.
+    // The get() costs one extra document read per rules evaluation.
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    match /users/{uid} {
+      // Everyday app behavior — owner-only: signup's initial setDoc, Buy/Sell
+      // balance+holdings updates, Reset Portfolio, profile display-name save,
+      // and account-deletion's final deleteDoc.
+      allow read: if isOwner(uid) || isAdmin();
+      allow create, delete: if isOwner(uid);
+      // Owner covers all of the app's own balance/holdings/profile writes;
+      // isAdmin() additionally covers ONLY the admin "Adjust Virtual Balance"
+      // tool (src/lib/admin.ts), which targets a *different* uid than the
+      // admin's own — isOwner(uid) alone can't cover that.
+      allow update: if isOwner(uid) || isAdmin();
+
+      match /transactions/{transactionId} {
+        allow read, create: if isOwner(uid) || isAdmin();
+        // Immutable ledger — a trade record is never edited after the fact,
+        // by anyone, including admins.
+        allow update: if false;
+        // Only reached by the account-deletion cleanup flow (owner only —
+        // admins never delete a user's trade history).
+        allow delete: if isOwner(uid);
+      }
+
+      match /portfolioSnapshots/{snapshotId} {
+        allow read, create: if isOwner(uid) || isAdmin();
+        allow update: if false;
+        allow delete: if isOwner(uid);
+      }
+    }
+
+    // Collection-group reads for the admin dashboard/trade feed
+    // (collectionGroup('transactions') in AdminDashboard.tsx / AdminTrades.tsx).
+    // Firestore requires a separate top-level `{path=**}` wildcard match for
+    // collection-group queries — the nested match above only covers direct
+    // users/{uid}/transactions/{id} path reads, not cross-user queries.
+    // NOTE: querying via collectionGroup() also requires a collection-group
+    // index on the "timestamp" field, configured separately in the Firebase
+    // console (Firestore → Indexes) — this rule alone isn't sufficient.
+    match /{path=**}/transactions/{transactionId} {
+      allow read: if isAdmin();
+    }
+
+    match /adminActions/{actionId} {
+      // Accountability log for src/lib/admin.ts's balance-adjust tool.
+      // adminUid must match the caller — an admin can't file a record
+      // claiming a different admin made the change.
+      allow create: if isAdmin() && request.resource.data.adminUid == request.auth.uid;
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /supportMessages/{messageId} {
+      // Anyone signed in may file a message, but only under their own uid —
+      // this blocks writing a doc that claims to be from someone else.
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      // No admin-read feature exists in the app, so no client gets read
+      // access, and nothing may be changed or removed once submitted.
+      allow read, update, delete: if false;
+    }
+
+    // Deny everything else by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
