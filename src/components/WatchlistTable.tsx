@@ -1,22 +1,27 @@
+import { Star } from 'lucide-react'
 import type { MarketPrice } from '../lib/api'
-import { TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
+import { formatUsd } from '../lib/constants'
 
 interface WatchlistTableProps {
   prices: MarketPrice[]
   loading?: boolean
+  /** Which symbols to render as rows, in this order. */
+  symbols: string[]
+  /** The user's full current watchlist — determines each row's star state. */
+  watchlist: string[]
+  /** Called with a symbol when its star is clicked. */
+  onToggleStar: (symbol: string) => void
 }
 
-/**
- * There's no per-user watchlist selection yet (no Firestore field for it),
- * so this shows the app's tracked markets as a stand-in "watchlist" — the
- * same live price data already used everywhere else, not a fabricated list.
- */
-export default function WatchlistTable({ prices, loading }: WatchlistTableProps) {
+export default function WatchlistTable({ prices, loading, symbols, watchlist, onToggleStar }: WatchlistTableProps) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-sm">
+      <table className="w-full min-w-[600px] text-sm">
         <thead>
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
+            <th className="w-10 px-4 py-3 font-medium">
+              <span className="sr-only">Watchlisted</span>
+            </th>
             <th className="px-4 py-3 font-medium">Symbol</th>
             <th className="px-4 py-3 font-medium">Name</th>
             <th className="px-4 py-3 font-medium">24h Move</th>
@@ -25,13 +30,29 @@ export default function WatchlistTable({ prices, loading }: WatchlistTableProps)
           </tr>
         </thead>
         <tbody>
-          {TRACKED_SYMBOLS.map((symbol) => {
+          {symbols.map((symbol) => {
             const coin = prices.find((price) => price.symbol === symbol)
             const priceKnown = Boolean(coin && coin.price > 0)
+            const isStarred = watchlist.includes(symbol)
+
+            const starButton = (
+              <button
+                type="button"
+                onClick={() => onToggleStar(symbol)}
+                className={`flex items-center justify-center rounded p-1 transition-colors ${
+                  isStarred ? 'text-accent-gold hover:opacity-70' : 'text-text-muted hover:text-accent-gold'
+                }`}
+                aria-label={isStarred ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
+                aria-pressed={isStarred}
+              >
+                <Star size={16} fill={isStarred ? 'currentColor' : 'none'} />
+              </button>
+            )
 
             if (loading || !priceKnown || !coin) {
               return (
                 <tr key={symbol} className="border-b border-border last:border-0">
+                  <td className="px-4 py-3">{starButton}</td>
                   <td className="px-4 py-3 font-mono font-semibold text-text-primary">{symbol}</td>
                   <td colSpan={4} className="px-4 py-3">
                     <div className="h-4 w-full max-w-[280px] animate-pulse rounded bg-surface-alt" />
@@ -47,6 +68,7 @@ export default function WatchlistTable({ prices, loading }: WatchlistTableProps)
 
             return (
               <tr key={symbol} className="border-b border-border last:border-0">
+                <td className="px-4 py-3">{starButton}</td>
                 <td className="px-4 py-3 font-mono font-semibold text-text-primary">{coin.symbol}</td>
                 <td className="px-4 py-3 text-text-muted">{coin.name}</td>
                 <td className="px-4 py-3">

@@ -25,6 +25,12 @@ export interface UserAccountDocument {
   createdAt: unknown
   totalRealizedPnl?: number
   /**
+   * Ticker symbols the user is tracking, e.g. ["BTC", "ETH"]. Absent on
+   * accounts that predate this field — treat missing as "every tracked
+   * symbol" (see useWatchlist's DEFAULT_WATCHLIST), not as empty.
+   */
+  watchlist?: string[]
+  /**
    * Grants access to /admin/*. Defaults to false/absent for every account.
    * No client code ever sets this — it's only ever flipped by hand in the
    * Firestore console. AdminRoute/Sidebar only ever *read* it.
@@ -50,5 +56,27 @@ export interface AdminActionDoc {
   previousBalance: number
   newBalance: number
   reason: string
+  timestamp: unknown
+}
+
+/**
+ * The fixed thread doc at users/{uid}/supportChat/thread. Fields beyond
+ * uid are a denormalized "preview" of the latest message, kept in sync by
+ * src/lib/supportChat.ts on every send — this is what lets AdminSupport.tsx
+ * list active threads with one cheap collectionGroup query instead of
+ * scanning every message of every user.
+ */
+export interface SupportChatThreadDoc {
+  uid: string
+  lastMessage: string
+  lastMessageAt: unknown
+  lastSenderRole: 'user' | 'admin'
+}
+
+/** One message at users/{uid}/supportChat/thread/messages/{id}. Written by a real person only. */
+export interface SupportChatMessageDoc {
+  senderId: string
+  senderRole: 'user' | 'admin'
+  text: string
   timestamp: unknown
 }

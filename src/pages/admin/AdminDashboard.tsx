@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { collection, collectionGroup, getCountFromServer, getDocs } from 'firebase/firestore'
-import { ArrowRight, LineChart, ShieldCheck, Users } from 'lucide-react'
+import { ArrowRight, LineChart, MessageCircle, ShieldCheck, Users } from 'lucide-react'
 import Card from '../../components/Card'
 import PageContainer from '../../components/PageContainer'
 import { db } from '../../lib/firebase'
@@ -138,7 +138,7 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
         <Link to="/admin/users">
           <Card className="flex items-center justify-between transition-colors hover:border-accent-gold/40">
             <div className="flex items-center gap-3">
@@ -158,6 +158,18 @@ export default function AdminDashboard() {
               <div>
                 <p className="font-medium text-text-primary">Trade Feed</p>
                 <p className="text-xs text-text-muted">Most recent simulated trades across all users.</p>
+              </div>
+            </div>
+            <ArrowRight size={16} className="text-text-muted" />
+          </Card>
+        </Link>
+        <Link to="/admin/support">
+          <Card className="flex items-center justify-between transition-colors hover:border-accent-gold/40">
+            <div className="flex items-center gap-3">
+              <MessageCircle size={20} className="text-accent-gold" />
+              <div>
+                <p className="font-medium text-text-primary">Support Chats</p>
+                <p className="text-xs text-text-muted">Live conversations waiting for a reply.</p>
               </div>
             </div>
             <ArrowRight size={16} className="text-text-muted" />

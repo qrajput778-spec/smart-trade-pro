@@ -2,55 +2,77 @@ rules_version = '2';
 
 // Firestore security rules for SMART TRADE PRO.
 //
-// Schema verified directly against the app code before writing this file
-// (src/lib/trading.ts, src/lib/account.ts, src/pages/Signup.tsx,
-// src/pages/Support.tsx):
+// Schema verified directly against the app code (src/lib/trading.ts,
+// src/lib/account.ts, src/lib/admin.ts, src/lib/supportChat.ts,
+// src/pages/Signup.tsx, src/pages/admin/*.tsx) as of this version:
 //
 //   users/{uid}                          — profile + balance + holdings +
-//                                           totalRealizedPnl. Created once on
-//                                           signup (setDoc), then updated by
-//                                           Buy/Sell/Reset/profile-save, and
-//                                           deleted during account deletion.
-//                                           Always the signed-in user's own
-//                                           doc — the app never reads or
-//                                           writes another user's uid.
+//                                           totalRealizedPnl + watchlist +
+//                                           isAdmin. Created once on signup
+//                                           (setDoc), then updated by
+//                                           Buy/Sell/Reset/profile-save
+//                                           (owner), or by the admin
+//                                           "Adjust Virtual Balance" tool
+//                                           (admin, balance field only), and
+//                                           deleted during account deletion
+//                                           (owner).
+//   users/{uid}.isAdmin                  — boolean, absent/false by default.
+//                                           No client code ever writes this
+//                                           field (not even the admin-update
+//                                           path above, which is restricted
+//                                           to `balance` only) — it's only
+//                                           ever set by hand in the Firestore
+//                                           console for a specific account.
 //   users/{uid}/transactions/{id}        — one doc per executed Buy/Sell,
 //                                           written with an auto-generated id
 //                                           inside the same transaction as
-//                                           the balance/holdings update.
-//                                           Never updated afterward (an
-//                                           immutable trade ledger). Read via
-//                                           onSnapshot/getDocs on Wallet, and
-//                                           bulk-deleted only during account
-//                                           deletion.
+//                                           the owner's own balance/holdings
+//                                           update. Never updated afterward
+//                                           (an immutable trade ledger).
+//                                           Read by the owner (Wallet), by
+//                                           an admin viewing one account
+//                                           (AdminUserDetail, direct path),
+//                                           and by an admin across all
+//                                           accounts (AdminDashboard/
+//                                           AdminTrades, collectionGroup).
+//                                           Bulk-deleted only during the
+//                                           owner's own account deletion.
 //   users/{uid}/portfolioSnapshots/{id}  — same lifecycle as transactions:
-//                                           create-once per trade, read for
-//                                           the Dashboard/Portfolio value
-//                                           charts, deleted on account
+//                                           owner-created once per trade,
+//                                           read by owner or admin, deleted
+//                                           only on the owner's own account
 //                                           deletion. Never updated.
-//   supportMessages/{id}                 — contact-form submissions
-//                                           (addDoc with an auto id). The app
-//                                           has no admin UI that reads these
-//                                           back, so no client ever needs
-//                                           read access.
-//   users/{uid}.isAdmin                  — DRAFT (see below). Boolean, absent/
-//                                           false by default, never written by
-//                                           any client code — only ever set by
-//                                           hand in the Firestore console.
-//   adminActions/{id}                    — DRAFT. Accountability log for the
-//                                           admin "Adjust Virtual Balance"
-//                                           tool (src/lib/admin.ts): addDoc
-//                                           with an auto id, one entry per
-//                                           balance adjustment.
+//   users/{uid}/supportChat/thread       — fixed-id doc (one thread per
+//                                           user) holding denormalized
+//                                           lastMessage/lastMessageAt/
+//                                           lastSenderRole, updated by
+//                                           src/lib/supportChat.ts on every
+//                                           send — by the owner (their own
+//                                           messages) or by an admin
+//                                           (replies, and the 7-day
+//                                           stale-thread cleanup sweep).
+//   .../supportChat/thread/messages/{id} — one real chat message. Read live
+//                                           via onSnapshot by Support.tsx
+//                                           (the owner) and
+//                                           AdminSupport.tsx (any admin).
+//   adminActions/{id}                    — accountability log for the admin
+//                                           balance-adjust tool: one addDoc
+//                                           per adjustment. Create-only —
+//                                           no screen in the app reads this
+//                                           back yet, so no client gets read
+//                                           access either (see the rule
+//                                           below for how to relax this if
+//                                           an admin-activity viewer is ever
+//                                           built).
+//   supportMessages/{id}                 — the OLD static contact-form
+//                                           collection. No longer written by
+//                                           any current code (Support.tsx
+//                                           was replaced by the live
+//                                           supportChat above) — rule kept
+//                                           narrow and harmless in case any
+//                                           historical documents remain.
 //
 // Everything not explicitly matched below is denied by default.
-//
-// The isAdmin()-gated rules below (users/{uid} admin read/update,
-// {path=**}/transactions collection-group read, adminActions) are a DRAFT
-// for the new /admin area and have NOT been deployed — per instructions,
-// only the file has been updated. Deploy the same way as before (Firebase
-// console → Firestore Database → Rules → paste this file → Publish) once
-// ready, and set up the collection-group index called out below first.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -63,10 +85,11 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // --- DRAFT — not yet deployed (see below) ---
     // True only for the specific account(s) manually flipped to isAdmin:
-    // true in the Firestore console — no client code ever sets this field,
-    // so a user can't grant themselves admin access by writing their own doc.
+    // true in the Firestore console — no client code ever sets this field
+    // (see users/{uid}'s update rule below, which restricts any
+    // admin-initiated write to the unrelated `balance` field only), so a
+    // user can't grant themselves admin access by writing their own doc.
     // The get() costs one extra document read per rules evaluation.
     function isAdmin() {
       return isSignedIn() &&
@@ -74,21 +97,34 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      // Everyday app behavior — owner-only: signup's initial setDoc, Buy/Sell
-      // balance+holdings updates, Reset Portfolio, profile display-name save,
-      // and account-deletion's final deleteDoc.
+      // Owner: signup's initial setDoc, Buy/Sell balance+holdings updates,
+      // Reset Portfolio, profile display-name save, watchlist edits, and
+      // account-deletion's final deleteDoc.
+      // Admin: read access for AdminUsers/AdminUserDetail.
       allow read: if isOwner(uid) || isAdmin();
       allow create, delete: if isOwner(uid);
-      // Owner covers all of the app's own balance/holdings/profile writes;
-      // isAdmin() additionally covers ONLY the admin "Adjust Virtual Balance"
-      // tool (src/lib/admin.ts), which targets a *different* uid than the
-      // admin's own — isOwner(uid) alone can't cover that.
-      allow update: if isOwner(uid) || isAdmin();
+
+      // Owner covers all of the app's own balance/holdings/profile writes.
+      // Admin is granted update access ONLY when the write touches the
+      // `balance` field and nothing else, and only to a valid non-negative
+      // number — this is exactly (and only) what the "Adjust Virtual
+      // Balance" tool (src/lib/admin.ts) does. An admin can never use this
+      // path to touch holdings, email, isAdmin, or any other field on
+      // another user's document.
+      allow update: if isOwner(uid) || (
+        isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance']) &&
+        request.resource.data.balance is number &&
+        request.resource.data.balance >= 0
+      );
 
       match /transactions/{transactionId} {
-        allow read, create: if isOwner(uid) || isAdmin();
-        // Immutable ledger — a trade record is never edited after the fact,
-        // by anyone, including admins.
+        allow read: if isOwner(uid) || isAdmin();
+        // Always self-authored (trading.ts only ever writes to the
+        // trader's own uid) — no admin create path exists or is needed.
+        allow create: if isOwner(uid);
+        // Immutable ledger — a trade record is never edited after the
+        // fact, by anyone, including admins.
         allow update: if false;
         // Only reached by the account-deletion cleanup flow (owner only —
         // admins never delete a user's trade history).
@@ -96,21 +132,43 @@ service cloud.firestore {
       }
 
       match /portfolioSnapshots/{snapshotId} {
-        allow read, create: if isOwner(uid) || isAdmin();
+        allow read: if isOwner(uid) || isAdmin();
+        allow create: if isOwner(uid);
         allow update: if false;
         allow delete: if isOwner(uid);
       }
+
+      // Real user↔admin support chat (src/lib/supportChat.ts). A user can
+      // read/write only their own thread; an admin can read/write any
+      // thread (to reply, and to run the 7-day stale-thread cleanup).
+      match /supportChat/{threadId} {
+        allow read, write: if isOwner(uid) || isAdmin();
+
+        match /messages/{messageId} {
+          allow read, write: if isOwner(uid) || isAdmin();
+        }
+      }
     }
 
-    // Collection-group reads for the admin dashboard/trade feed
+    // Collection-group read for the admin dashboard/trade feed
     // (collectionGroup('transactions') in AdminDashboard.tsx / AdminTrades.tsx).
     // Firestore requires a separate top-level `{path=**}` wildcard match for
     // collection-group queries — the nested match above only covers direct
     // users/{uid}/transactions/{id} path reads, not cross-user queries.
-    // NOTE: querying via collectionGroup() also requires a collection-group
-    // index on the "timestamp" field, configured separately in the Firebase
-    // console (Firestore → Indexes) — this rule alone isn't sufficient.
+    // NOTE: collectionGroup() queries with an orderBy also require a
+    // collection-group index on that field, configured separately in the
+    // Firebase console (Firestore → Indexes) — this rule alone doesn't
+    // create it.
     match /{path=**}/transactions/{transactionId} {
+      allow read: if isAdmin();
+    }
+
+    // Collection-group read for AdminSupport.tsx's thread list
+    // (collectionGroup('supportChat'), ordered by lastMessageAt). Same
+    // requirement as above: a top-level wildcard match, plus a
+    // collection-group index on "lastMessageAt" set up separately in the
+    // Firebase console.
+    match /{path=**}/supportChat/{threadId} {
       allow read: if isAdmin();
     }
 
@@ -119,16 +177,18 @@ service cloud.firestore {
       // adminUid must match the caller — an admin can't file a record
       // claiming a different admin made the change.
       allow create: if isAdmin() && request.resource.data.adminUid == request.auth.uid;
-      allow read: if isAdmin();
+      // No screen reads this back yet — change to `if isAdmin();` if an
+      // admin-activity viewer is ever built.
+      allow read: if false;
       allow update, delete: if false;
     }
 
     match /supportMessages/{messageId} {
-      // Anyone signed in may file a message, but only under their own uid —
-      // this blocks writing a doc that claims to be from someone else.
+      // No longer written by any current code — kept narrow and harmless
+      // in case any historical documents remain from before the live chat
+      // replaced this. If something ever needs to read these back, change
+      // `allow read` accordingly.
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      // No admin-read feature exists in the app, so no client gets read
-      // access, and nothing may be changed or removed once submitted.
       allow read, update, delete: if false;
     }
 

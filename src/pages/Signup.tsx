@@ -4,7 +4,7 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
 import { getAuthErrorMessage } from '../lib/authErrors'
-import { STARTING_VIRTUAL_BALANCE, formatUsd } from '../lib/constants'
+import { STARTING_VIRTUAL_BALANCE, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import TextField from '../components/TextField'
@@ -67,6 +67,10 @@ export default function Signup() {
         email,
         balance: STARTING_VIRTUAL_BALANCE,
         holdings: {},
+        // Starts with every tracked symbol starred — same default a
+        // pre-existing account without this field gets at read time
+        // (see useWatchlist), just made explicit from day one.
+        watchlist: [...TRACKED_SYMBOLS],
         createdAt: serverTimestamp(),
       })
 

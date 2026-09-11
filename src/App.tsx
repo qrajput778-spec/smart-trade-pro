@@ -21,6 +21,7 @@ import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminUserDetail from './pages/admin/AdminUserDetail'
 import AdminTrades from './pages/admin/AdminTrades'
+import AdminSupport from './pages/admin/AdminSupport'
 
 export default function App() {
   return (
@@ -134,6 +135,14 @@ export default function App() {
                 element={
                   <AdminRoute>
                     <AdminTrades />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/support"
+                element={
+                  <AdminRoute>
+                    <AdminSupport />
                   </AdminRoute>
                 }
               />

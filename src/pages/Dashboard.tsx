@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
 import { usePortfolioSnapshots } from '../hooks/usePortfolioSnapshots'
+import { useWatchlist } from '../hooks/useWatchlist'
 import { summarizeHoldings } from '../lib/portfolioMath'
 import { resetPortfolio } from '../lib/trading'
 import { ADD_VIRTUAL_FUNDS_AMOUNT, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
@@ -36,6 +37,7 @@ export default function Dashboard() {
   const { user } = useAuth()
   const { prices, loading: pricesLoading } = useMarketData()
   const { snapshots } = usePortfolioSnapshots(user?.uid)
+  const { watchlist, toggleSymbol } = useWatchlist(user?.uid)
 
   const [account, setAccount] = useState<AccountSnapshot | null>(null)
   const [accountLoading, setAccountLoading] = useState(true)
@@ -291,9 +293,27 @@ export default function Dashboard() {
       {/* My Watchlist */}
       <section className="mt-10">
         <h2 className="text-lg font-semibold text-text-primary">My Watchlist</h2>
-        <Card className="mt-4 p-0">
-          <WatchlistTable prices={prices} loading={pricesLoading} />
-        </Card>
+        {(() => {
+          const starredSymbols = TRACKED_SYMBOLS.filter((symbol) => watchlist.includes(symbol))
+          return starredSymbols.length === 0 ? (
+            <Card className="mt-4 py-8 text-center text-sm text-text-muted">
+              You haven't added anything to your watchlist yet.{' '}
+              <Link to="/watchlist" className="text-accent-gold hover:underline">
+                Manage watchlist
+              </Link>
+            </Card>
+          ) : (
+            <Card className="mt-4 p-0">
+              <WatchlistTable
+                prices={prices}
+                loading={pricesLoading}
+                symbols={starredSymbols}
+                watchlist={watchlist}
+                onToggleStar={toggleSymbol}
+              />
+            </Card>
+          )
+        })()}
       </section>
     </PageContainer>
   )
