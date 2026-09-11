@@ -22,6 +22,8 @@ import AdminUsers from './pages/admin/AdminUsers'
 import AdminUserDetail from './pages/admin/AdminUserDetail'
 import AdminTrades from './pages/admin/AdminTrades'
 import AdminSupport from './pages/admin/AdminSupport'
+import AdminDeposits from './pages/admin/AdminDeposits'
+import AdminWithdrawals from './pages/admin/AdminWithdrawals'
 
 export default function App() {
   return (
@@ -143,6 +145,22 @@ export default function App() {
                 element={
                   <AdminRoute>
                     <AdminSupport />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/deposits"
+                element={
+                  <AdminRoute>
+                    <AdminDeposits />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/withdrawals"
+                element={
+                  <AdminRoute>
+                    <AdminWithdrawals />
                   </AdminRoute>
                 }
               />

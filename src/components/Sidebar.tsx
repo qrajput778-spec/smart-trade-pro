@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
+  ArrowDownToLine,
   ArrowLeftRight,
+  ArrowUpFromLine,
   ChevronDown,
   ChevronLeft,
   Compass,
@@ -45,6 +47,8 @@ const ADMIN_SUB_ITEMS: NavItem[] = [
   { label: 'Users', to: '/admin/users', icon: Users },
   { label: 'Trades', to: '/admin/trades', icon: ArrowLeftRight },
   { label: 'Support', to: '/admin/support', icon: MessageCircle },
+  { label: 'Deposits', to: '/admin/deposits', icon: ArrowDownToLine },
+  { label: 'Withdrawals', to: '/admin/withdrawals', icon: ArrowUpFromLine },
 ]
 
 function NavItemLink({ item }: { item: NavItem }) {

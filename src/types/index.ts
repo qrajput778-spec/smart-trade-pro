@@ -36,6 +36,46 @@ export interface UserAccountDocument {
    * Firestore console. AdminRoute/Sidebar only ever *read* it.
    */
   isAdmin?: boolean
+  /**
+   * Running total of this user's own currently-pending withdrawal request
+   * amounts (src/lib/balanceRequests.ts) — a reservation, NOT a second
+   * balance field. Incremented when a withdrawal request is submitted,
+   * released back down when that same request is approved or rejected, so
+   * the user's pending requests can never collectively ask for more than
+   * `balance` actually holds. Absent on accounts that have never submitted
+   * a withdrawal request — treat missing as 0.
+   */
+  pendingWithdrawalTotal?: number
+}
+
+export type BalanceRequestType = 'deposit' | 'withdrawal'
+export type BalanceRequestStatus = 'pending' | 'approved' | 'rejected'
+
+/**
+ * One user-submitted deposit or withdrawal request, at balanceRequests/{id}
+ * (top-level collection, not nested under users/{uid} — this keeps admin's
+ * "every request across every user" queries a plain collection read with no
+ * collection-group index required). Submitting one never touches `balance`
+ * by itself; only an admin's approval (src/lib/balanceRequests.ts) does,
+ * and firestore.rules enforces that only an admin can ever move `status`
+ * off 'pending'.
+ */
+export interface BalanceRequestDoc {
+  userId: string
+  userEmail: string
+  type: BalanceRequestType
+  amount: number
+  status: BalanceRequestStatus
+  createdAt: unknown
+  reviewedAt: unknown | null
+  reviewedBy: string | null
+  adminNote: string | null
+  /**
+   * Withdrawal-only, informational: the destination the user typed in the
+   * Withdraw modal. Purely for the admin to see while reviewing — there's
+   * no real payment rail behind it, nothing is ever actually sent there.
+   */
+  recipientAddress?: string
 }
 
 /** One executed Buy/Sell, at users/{uid}/transactions/{id}. */

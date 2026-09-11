@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { collection, doc, increment, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore'
-import { PlusCircle, RotateCcw } from 'lucide-react'
+import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { ArrowDownToLine, ArrowUpFromLine, Wallet as WalletIcon } from 'lucide-react'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import MiniStat from '../components/MiniStat'
 import PageContainer from '../components/PageContainer'
+import BalanceRequestPanel from '../components/BalanceRequestPanel'
+import DepositModal from '../components/DepositModal'
+import WithdrawModal from '../components/WithdrawModal'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
-import { resetPortfolio } from '../lib/trading'
-import { ADD_VIRTUAL_FUNDS_AMOUNT, formatUsd } from '../lib/constants'
+import { formatUsd } from '../lib/constants'
 import type { HoldingsMap } from '../types'
 
 interface TransactionRow {
@@ -22,8 +24,6 @@ interface TransactionRow {
   timestamp: Date | null
 }
 
-type PendingAction = 'add-funds' | 'reset' | null
-
 const TRANSACTION_HISTORY_LIMIT = 50
 
 export default function Wallet() {
@@ -32,13 +32,15 @@ export default function Wallet() {
 
   const [balance, setBalance] = useState(0)
   const [holdings, setHoldings] = useState<HoldingsMap>({})
+  const [email, setEmail] = useState('')
+  const [pendingWithdrawalTotal, setPendingWithdrawalTotal] = useState(0)
   const [accountLoading, setAccountLoading] = useState(true)
 
   const [transactions, setTransactions] = useState<TransactionRow[]>([])
   const [transactionsLoading, setTransactionsLoading] = useState(true)
 
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [depositOpen, setDepositOpen] = useState(false)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
 
   useEffect(() => {
     if (!user || !db) {
@@ -49,6 +51,8 @@ export default function Wallet() {
       const data = snapshot.data()
       setBalance(typeof data?.balance === 'number' ? data.balance : 0)
       setHoldings((data?.holdings as HoldingsMap | undefined) ?? {})
+      setEmail(typeof data?.email === 'string' ? data.email : user.email ?? '')
+      setPendingWithdrawalTotal(typeof data?.pendingWithdrawalTotal === 'number' ? data.pendingWithdrawalTotal : 0)
       setAccountLoading(false)
     })
     return unsubscribe
@@ -90,50 +94,6 @@ export default function Wallet() {
     return unsubscribe
   }, [user])
 
-  async function handleAddFunds() {
-    if (!user || !db) return
-    const amountLabel = formatUsd(ADD_VIRTUAL_FUNDS_AMOUNT, { maximumFractionDigits: 0 })
-    if (!window.confirm(`Add ${amountLabel} in virtual funds to your balance?`)) return
-
-    setPendingAction('add-funds')
-    setActionError(null)
-    try {
-      // Firestore field update only — no payment provider, no real transfer.
-      await updateDoc(doc(db, 'users', user.uid), {
-        balance: increment(ADD_VIRTUAL_FUNDS_AMOUNT),
-      })
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[wallet] add funds failed', err)
-      setActionError('Could not add virtual funds — please try again.')
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  async function handleResetPortfolio() {
-    if (!user || !db) return
-    if (
-      !window.confirm(
-        'Reset your portfolio? This sets your balance back to the starting amount and clears all holdings. This cannot be undone.',
-      )
-    ) {
-      return
-    }
-
-    setPendingAction('reset')
-    setActionError(null)
-    try {
-      await resetPortfolio(user.uid)
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[wallet] reset portfolio failed', err)
-      setActionError('Could not reset your portfolio — please try again.')
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
   if (accountLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -156,6 +116,7 @@ export default function Wallet() {
   const knownHoldingsValue = holdingRows.reduce((sum, row) => sum + (row.value ?? 0), 0)
   const anyValuePending = holdingRows.some((row) => row.value === null)
   const totalPortfolioValue = balance + knownHoldingsValue
+  const availableToWithdraw = Math.max(0, balance - pendingWithdrawalTotal)
 
   return (
     <PageContainer>
@@ -164,45 +125,56 @@ export default function Wallet() {
         <p className="mt-1 text-sm text-text-muted">Your virtual cash, holdings, and trade history.</p>
       </header>
 
-      <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <span className="text-xs uppercase tracking-wide text-text-muted">Available Cash</span>
-          <p className="mt-2 font-mono text-4xl text-text-primary">{formatUsd(balance)}</p>
-
-          <div className="mt-5 grid grid-cols-2 gap-3 border-t border-border pt-4">
-            <MiniStat
-              label="Total Portfolio Value"
-              value={anyValuePending ? null : formatUsd(totalPortfolioValue)}
-            />
-            <MiniStat label="Holdings Value" value={anyValuePending ? null : formatUsd(knownHoldingsValue)} />
+      {/* Wallet balance hero — the page's main focal point, matching a
+          crypto-exchange-style wallet: one big balance figure, its
+          breakdown, and Deposit/Withdraw as the two primary actions. */}
+      <Card className="mt-8 overflow-hidden border-accent-gold/20 bg-gradient-to-br from-surface to-surface-alt p-6 sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div>
+            <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+              <WalletIcon size={14} className="text-accent-gold" /> Available Cash
+            </span>
+            <p className="mt-2 font-mono text-4xl font-semibold text-text-primary sm:text-5xl">
+              {formatUsd(balance)}
+            </p>
           </div>
-        </Card>
 
-        <Card className="flex flex-col">
-          <span className="text-xs uppercase tracking-wide text-text-muted">Manage Funds</span>
-          <div className="mt-4 flex flex-col gap-3">
+          <div className="flex flex-none gap-3">
+            <Button
+              className="flex items-center gap-2 px-5"
+              onClick={() => setDepositOpen(true)}
+            >
+              <ArrowDownToLine size={16} /> Deposit
+            </Button>
             <Button
               variant="secondary"
-              className="flex items-center justify-center gap-2"
-              onClick={handleAddFunds}
-              disabled={pendingAction !== null}
+              className="flex items-center gap-2 px-5"
+              onClick={() => setWithdrawOpen(true)}
             >
-              <PlusCircle size={16} />
-              {pendingAction === 'add-funds' ? 'Adding…' : 'Add Virtual Funds'}
-            </Button>
-            <Button
-              variant="danger"
-              className="flex items-center justify-center gap-2"
-              onClick={handleResetPortfolio}
-              disabled={pendingAction !== null}
-            >
-              <RotateCcw size={16} />
-              {pendingAction === 'reset' ? 'Resetting…' : 'Reset Portfolio'}
+              <ArrowUpFromLine size={16} /> Withdraw
             </Button>
           </div>
-          {actionError && <p className="mt-3 text-xs text-danger">{actionError}</p>}
-        </Card>
-      </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-3 border-t border-border pt-5 sm:grid-cols-3">
+          <MiniStat
+            label="Total Portfolio Value"
+            value={anyValuePending ? null : formatUsd(totalPortfolioValue)}
+          />
+          <MiniStat label="Holdings Value" value={anyValuePending ? null : formatUsd(knownHoldingsValue)} />
+          <MiniStat label="Available to Withdraw" value={formatUsd(availableToWithdraw)} />
+        </div>
+      </Card>
+
+      <DepositModal open={depositOpen} onClose={() => setDepositOpen(false)} uid={user?.uid ?? ''} email={email} />
+      <WithdrawModal
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        uid={user?.uid ?? ''}
+        email={email}
+        balance={balance}
+        pendingWithdrawalTotal={pendingWithdrawalTotal}
+      />
 
       <section className="mt-10">
         <h2 className="text-lg font-semibold text-text-primary">Holdings</h2>
@@ -235,6 +207,8 @@ export default function Wallet() {
           </Card>
         )}
       </section>
+
+      {user && <BalanceRequestPanel uid={user.uid} />}
 
       <section className="mt-10">
         <h2 className="text-lg font-semibold text-text-primary">Transaction History</h2>

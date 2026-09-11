@@ -55,10 +55,49 @@ rules_version = '2';
 //                                           via onSnapshot by Support.tsx
 //                                           (the owner) and
 //                                           AdminSupport.tsx (any admin).
-//   adminActions/{id}                    — accountability log for the admin
-//                                           balance-adjust tool: one addDoc
-//                                           per adjustment. Create-only —
-//                                           no screen in the app reads this
+//   balanceRequests/{id}                 — top-level collection (NOT nested
+//                                           under users/{uid}, so an admin's
+//                                           "every request across every
+//                                           user" view is a plain
+//                                           collection read, no
+//                                           collection-group index needed).
+//                                           One doc per deposit/withdrawal
+//                                           request (src/lib/
+//                                           balanceRequests.ts). Created by
+//                                           the owner only, always starting
+//                                           'pending' with no reviewer
+//                                           fields set. Only an admin can
+//                                           ever move it to 'approved'/
+//                                           'rejected', and only that exact
+//                                           transition — userId/type/amount/
+//                                           createdAt can never change after
+//                                           creation. The balance change an
+//                                           approval authorizes happens as a
+//                                           separate write to users/{uid} in
+//                                           the same client transaction, not
+//                                           through this document at all.
+//   users/{uid}.pendingWithdrawalTotal   — running total of a user's own
+//                                           currently-pending withdrawal
+//                                           request amounts. NOT a second
+//                                           balance field — just a
+//                                           reservation so multiple pending
+//                                           withdrawal requests can never
+//                                           collectively ask for more than
+//                                           `balance` actually holds.
+//                                           Written by the owner (submitting
+//                                           a request reserves it) and by an
+//                                           admin (approving/rejecting one
+//                                           releases it) — see the
+//                                           users/{uid} update rule below
+//                                           for the exact admin-side limits.
+//   adminActions/{id}                    — accountability log for admin
+//                                           actions: the balance-adjust
+//                                           tool, and deposit/withdrawal
+//                                           approve/reject decisions (each
+//                                           one addDoc'd in the same
+//                                           transaction as the decision
+//                                           itself). Create-only — no
+//                                           screen in the app reads this
 //                                           back yet, so no client gets read
 //                                           access either (see the rule
 //                                           below for how to relax this if
@@ -104,18 +143,25 @@ service cloud.firestore {
       allow read: if isOwner(uid) || isAdmin();
       allow create, delete: if isOwner(uid);
 
-      // Owner covers all of the app's own balance/holdings/profile writes.
-      // Admin is granted update access ONLY when the write touches the
-      // `balance` field and nothing else, and only to a valid non-negative
-      // number — this is exactly (and only) what the "Adjust Virtual
-      // Balance" tool (src/lib/admin.ts) does. An admin can never use this
-      // path to touch holdings, email, isAdmin, or any other field on
-      // another user's document.
+      // Owner covers all of the app's own balance/holdings/profile writes,
+      // including reserving/releasing their own pendingWithdrawalTotal hold
+      // when they submit/have a withdrawal request resolved by an admin.
+      // Admin is granted update access ONLY when the write touches
+      // `balance` and/or `pendingWithdrawalTotal` and nothing else, with
+      // both always left as valid non-negative numbers — this is exactly
+      // (and only) what the "Adjust Virtual Balance" tool (src/lib/
+      // admin.ts) and the deposit/withdrawal approval flow (src/lib/
+      // balanceRequests.ts) do. An admin can never use this path to touch
+      // holdings, email, isAdmin, or any other field on another user's
+      // document.
       allow update: if isOwner(uid) || (
         isAdmin() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance', 'pendingWithdrawalTotal']) &&
         request.resource.data.balance is number &&
-        request.resource.data.balance >= 0
+        request.resource.data.balance >= 0 &&
+        (!('pendingWithdrawalTotal' in request.resource.data) ||
+          (request.resource.data.pendingWithdrawalTotal is number &&
+            request.resource.data.pendingWithdrawalTotal >= 0))
       );
 
       match /transactions/{transactionId} {
@@ -148,6 +194,53 @@ service cloud.firestore {
           allow read, write: if isOwner(uid) || isAdmin();
         }
       }
+    }
+
+    // Deposit/withdrawal REQUEST workflow (src/lib/balanceRequests.ts).
+    // Top-level collection (not nested under users/{uid}) so an admin's
+    // "every request across every user" queries in AdminDeposits.tsx /
+    // AdminWithdrawals.tsx are a plain collection read — no collection-group
+    // index required. Submitting a request never changes balance by itself;
+    // status starts 'pending' and stays that way until an admin moves it to
+    // 'approved' or 'rejected' (see users/{uid}'s update rule above for
+    // exactly how that admin review is allowed to touch
+    // balance/pendingWithdrawalTotal, and only in that exact shape).
+    match /balanceRequests/{requestId} {
+      // A user can only ever file a request for themselves, in a fresh
+      // 'pending' state with no reviewer fields set — they can't forge an
+      // already-approved request, credit/debit someone else's account, or
+      // claim a reviewer identity. userEmail must match what's actually on
+      // their own profile, so the admin UI can't be fed a spoofed email.
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.userEmail ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email &&
+        request.resource.data.type in ['deposit', 'withdrawal'] &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.reviewedAt == null &&
+        request.resource.data.reviewedBy == null;
+
+      // Owner can read/list only their own requests (Wallet's request
+      // history); an admin can read/list every request.
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Only an admin can move a request off 'pending', and only to
+      // 'approved'/'rejected' — never touching userId/userEmail/type/
+      // amount/createdAt, and always stamping their own uid as reviewer
+      // (never someone else's). The actual balance change this authorizes
+      // happens as a separate write to users/{uid} in the very same client
+      // transaction — see src/lib/balanceRequests.ts.
+      allow update: if isAdmin() &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['approved', 'rejected'] &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'adminNote']) &&
+        request.resource.data.reviewedBy == request.auth.uid;
+
+      // Permanent record either way — nobody deletes a request, admins included.
+      allow delete: if false;
     }
 
     // Collection-group read for the admin dashboard/trade feed

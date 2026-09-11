@@ -36,9 +36,21 @@ export default {
           '0%': { transform: 'translateX(0)' },
           '100%': { transform: 'translateX(-50%)' },
         },
+        // Modal enter transitions (Modal.tsx) — backdrop fades in, panel
+        // fades + scales up slightly. No library needed for this.
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        'scale-in': {
+          '0%': { opacity: '0', transform: 'scale(0.96) translateY(4px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
       },
       animation: {
         marquee: 'marquee 30s linear infinite',
+        'fade-in': 'fade-in 150ms ease-out',
+        'scale-in': 'scale-in 150ms ease-out',
       },
     },
   },
