@@ -7,15 +7,32 @@ rules_version = '2';
 // src/pages/Signup.tsx, src/pages/admin/*.tsx) as of this version:
 //
 //   users/{uid}                          — profile + balance + holdings +
-//                                           totalRealizedPnl + watchlist +
-//                                           isAdmin. Created once on signup
-//                                           (setDoc), then updated by
-//                                           Buy/Sell/Reset/profile-save
-//                                           (owner), or by the admin
-//                                           "Adjust Virtual Balance" tool
-//                                           (admin, balance field only), and
-//                                           deleted during account deletion
-//                                           (owner).
+//                                           shorts + totalRealizedPnl +
+//                                           watchlist + isAdmin. `shorts` is
+//                                           the same shape as `holdings` but
+//                                           for open simulated short
+//                                           positions — fully independent,
+//                                           never touched by a Buy/Sell of
+//                                           `holdings`. Created once on
+//                                           signup (setDoc), then updated by
+//                                           Buy/Sell/Short/Cover/Reset/
+//                                           profile-save (owner — see the
+//                                           update rule below), or by the
+//                                           admin "Adjust Virtual Balance"
+//                                           tool / deposit-withdrawal
+//                                           approval (admin, `balance` and
+//                                           `pendingWithdrawalTotal` only),
+//                                           and deleted during account
+//                                           deletion (owner). NOTE: the
+//                                           admin's global Trade Outcome
+//                                           Control mode (systemSettings/
+//                                           tradeOutcomeControl, below)
+//                                           never touches this document
+//                                           directly — it only ever
+//                                           influences the PRICE a user's
+//                                           own Sell/Cover transaction (see
+//                                           the transactions schema entry)
+//                                           settles at.
 //   users/{uid}.isAdmin                  — boolean, absent/false by default.
 //                                           No client code ever writes this
 //                                           field (not even the admin-update
@@ -24,19 +41,85 @@ rules_version = '2';
 //                                           ever set by hand in the Firestore
 //                                           console for a specific account.
 //   users/{uid}/transactions/{id}        — one doc per executed Buy/Sell,
-//                                           written with an auto-generated id
-//                                           inside the same transaction as
-//                                           the owner's own balance/holdings
-//                                           update. Never updated afterward
-//                                           (an immutable trade ledger).
-//                                           Read by the owner (Wallet), by
-//                                           an admin viewing one account
+//                                           written by the OWNER, with an
+//                                           auto-generated id inside the
+//                                           same transaction as their own
+//                                           balance/holdings (or shorts)
+//                                           update (src/lib/trading.ts).
+//                                           `positionType` ('LONG'/'SHORT',
+//                                           absent = 'LONG') says which of
+//                                           holdings/shorts a doc affects —
+//                                           see the type comment in
+//                                           src/types/index.ts. Documents
+//                                           are immutable forever once
+//                                           created (no update path exists
+//                                           for anyone, admins included).
+//                                           A CLOSING record (one that
+//                                           carries `realizedPnl` — a Sell
+//                                           of a LONG or a Cover of a
+//                                           SHORT) is priced at settlement
+//                                           time according to the admin's
+//                                           global Trade Outcome Control
+//                                           mode (systemSettings/
+//                                           tradeOutcomeControl below):
+//                                           while that mode is NORMAL (or
+//                                           unset) the real live market
+//                                           price is used; while
+//                                           FORCE_WIN/FORCE_LOSS, the price
+//                                           is a guaranteed-outcome one
+//                                           derived from the position's own
+//                                           entry price, and the record is
+//                                           additionally flagged
+//                                           (adminControlled/adminAction/
+//                                           adminActionBy/adminActionAt/
+//                                           forcedResult) — a SIMULATED
+//                                           override for a course project.
+//                                           respectsGlobalOutcomeMode()
+//                                           below is the rules-side
+//                                           backstop making sure a
+//                                           closing record's `realizedPnl`
+//                                           sign actually matches whatever
+//                                           mode was active, so a client
+//                                           can't silently ignore it. Read
+//                                           by the owner (Wallet), by an
+//                                           admin viewing one account
 //                                           (AdminUserDetail, direct path),
 //                                           and by an admin across all
 //                                           accounts (AdminDashboard/
 //                                           AdminTrades, collectionGroup).
 //                                           Bulk-deleted only during the
 //                                           owner's own account deletion.
+//   users/{uid}/timedTrades/{id}          — one timed/binary-style contract
+//                                           (src/lib/timedTrading.ts) — a
+//                                           DIFFERENT product from the
+//                                           pooled holdings/shorts above:
+//                                           each is its own document,
+//                                           reserving `investedAmount` from
+//                                           cash at OPEN and releasing it
+//                                           (plus/minus P&L) at CLOSED,
+//                                           never touching holdings/shorts.
+//                                           Owner-created and owner-settled
+//                                           (their own client's background
+//                                           sweep, not an admin), exactly
+//                                           once: the update rule only
+//                                           allows OPEN->CLOSED, only after
+//                                           `request.time` (the REAL server
+//                                           time, never the client's) has
+//                                           reached `openedAt` (a
+//                                           serverTimestamp() the server
+//                                           itself resolved) plus
+//                                           `durationSeconds` — nothing
+//                                           client-clock-derived is ever
+//                                           trusted for the deadline itself.
+//                                           `scheduledCloseAt` is stored too,
+//                                           but only for the countdown UI's
+//                                           convenience. Settlement also
+//                                           writes a matching leg into
+//                                           transactions/ above (tagged
+//                                           tradeMode: 'TIMED'), so existing
+//                                           admin/history views show timed
+//                                           trades with no changes needed.
+//                                           Read by owner or admin.
 //   users/{uid}/portfolioSnapshots/{id}  — same lifecycle as transactions:
 //                                           owner-created once per trade,
 //                                           read by owner or admin, deleted
@@ -90,6 +173,55 @@ rules_version = '2';
 //                                           releases it) — see the
 //                                           users/{uid} update rule below
 //                                           for the exact admin-side limits.
+//   kycSubmissions/{id}                   — top-level collection (NOT
+//                                           nested under users/{uid}, same
+//                                           reasoning as balanceRequests),
+//                                           one doc per KYC verification
+//                                           attempt (src/lib/kyc.ts). A
+//                                           SIMULATED identity-verification
+//                                           workflow for a course project —
+//                                           nothing is checked against a
+//                                           real identity; an admin just
+//                                           reviews the uploaded files.
+//                                           Created by the owner only,
+//                                           always starting 'pending' with
+//                                           no reviewer fields set.
+//                                           Resubmitting after a rejection
+//                                           creates a NEW doc (history is
+//                                           just every doc for that
+//                                           userId), so owners never get
+//                                           update access at all — only an
+//                                           admin can ever move a
+//                                           submission off 'pending', and
+//                                           only that exact transition.
+//                                           The actual files live in
+//                                           Storage at
+//                                           kyc/{uid}/{submissionId}/{docType}
+//                                           (storage.rules) — Firestore
+//                                           only stores each file's path,
+//                                           never a download URL (see
+//                                           KycDocumentInfo in
+//                                           src/types/index.ts) and never
+//                                           the file itself.
+//   systemSettings/tradeOutcomeControl    — a SINGLETON document (one doc
+//                                           total, not one per admin) at
+//                                           this exact path holding
+//                                           { mode: 'NORMAL'|'FORCE_WIN'|
+//                                           'FORCE_LOSS', updatedBy,
+//                                           updatedByEmail, updatedAt }.
+//                                           Written only by an admin (the
+//                                           Trade Outcome Control page,
+//                                           src/lib/admin.ts's
+//                                           setGlobalTradeOutcomeMode) via a
+//                                           full setDoc overwrite. Read by
+//                                           every signed-in user, because
+//                                           every user's own Sell/Cover
+//                                           transaction (src/lib/
+//                                           trading.ts) needs to read this
+//                                           mode at settlement time to
+//                                           price its own trade correctly —
+//                                           see the transactions schema
+//                                           entry above.
 //   adminActions/{id}                    — accountability log for admin
 //                                           actions: the balance-adjust
 //                                           tool, and deposit/withdrawal
@@ -135,6 +267,37 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
+    // Rules-side backstop for the admin's global Trade Outcome Control mode
+    // (systemSettings/tradeOutcomeControl below): a client CREATING a
+    // closing transaction record (one that carries `realizedPnl` — see the
+    // transactions schema comment) must have priced it consistent with
+    // whatever mode is active, so a modified/malicious client can't just
+    // skip src/lib/trading.ts's own settlement-price logic and write
+    // whatever outcome it wants. An OPENING record (no `realizedPnl`) is
+    // never affected by the mode, so it's always allowed through here.
+    // Missing document / missing field are both treated as NORMAL — the
+    // documented default before an admin has ever touched the setting.
+    function respectsGlobalOutcomeMode() {
+      return !('realizedPnl' in request.resource.data) ||
+        !exists(/databases/$(database)/documents/systemSettings/tradeOutcomeControl) ||
+        !(get(/databases/$(database)/documents/systemSettings/tradeOutcomeControl).data.mode in ['FORCE_WIN', 'FORCE_LOSS']) ||
+        (get(/databases/$(database)/documents/systemSettings/tradeOutcomeControl).data.mode == 'FORCE_WIN' &&
+          request.resource.data.realizedPnl >= 0) ||
+        (get(/databases/$(database)/documents/systemSettings/tradeOutcomeControl).data.mode == 'FORCE_LOSS' &&
+          request.resource.data.realizedPnl <= 0);
+    }
+
+    // The real deadline for a timed trade (src/lib/timedTrading.ts): NOT
+    // the client-supplied `scheduledCloseAt` field (kept only as a display
+    // convenience for the countdown UI), but `openedAt` — a serverTimestamp()
+    // sentinel that Firestore itself resolves to the true commit time — plus
+    // the trade's own durationSeconds. Because `openedAt` is server-resolved
+    // by the time any settlement is attempted, this deadline is immune to
+    // client clock skew of any size, not just "normal" drift.
+    function timedTradeDeadline(tradeData) {
+      return tradeData.openedAt + duration.value(tradeData.durationSeconds, 's');
+    }
+
     match /users/{uid} {
       // Owner: signup's initial setDoc, Buy/Sell balance+holdings updates,
       // Reset Portfolio, profile display-name save, watchlist edits, and
@@ -143,20 +306,26 @@ service cloud.firestore {
       allow read: if isOwner(uid) || isAdmin();
       allow create, delete: if isOwner(uid);
 
-      // Owner covers all of the app's own balance/holdings/profile writes,
-      // including reserving/releasing their own pendingWithdrawalTotal hold
-      // when they submit/have a withdrawal request resolved by an admin.
+      // Owner covers all of the app's own balance/holdings/shorts/profile
+      // writes, including reserving/releasing their own
+      // pendingWithdrawalTotal hold when they submit/have a withdrawal
+      // request resolved by an admin, and opening/closing simulated short
+      // positions (src/lib/trading.ts's executeShortOrder/closeShortOrder,
+      // which touch `shorts`, never `holdings`) — the global Trade Outcome
+      // Control mode changes what PRICE a close settles at, never who
+      // performs the write, so it never needs a separate admin-write path
+      // here.
       // Admin is granted update access ONLY when the write touches
       // `balance` and/or `pendingWithdrawalTotal` and nothing else, with
-      // both always left as valid non-negative numbers — this is exactly
-      // (and only) what the "Adjust Virtual Balance" tool (src/lib/
-      // admin.ts) and the deposit/withdrawal approval flow (src/lib/
-      // balanceRequests.ts) do. An admin can never use this path to touch
-      // holdings, email, isAdmin, or any other field on another user's
-      // document.
+      // `balance` always left a valid non-negative number — this is
+      // exactly (and only) what the "Adjust Virtual Balance" tool and the
+      // deposit/withdrawal approval flow (src/lib/balanceRequests.ts) do.
+      // An admin can never use this path to touch email, isAdmin,
+      // holdings, shorts, or any other field on another user's document.
       allow update: if isOwner(uid) || (
         isAdmin() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance', 'pendingWithdrawalTotal']) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['balance', 'pendingWithdrawalTotal']) &&
         request.resource.data.balance is number &&
         request.resource.data.balance >= 0 &&
         (!('pendingWithdrawalTotal' in request.resource.data) ||
@@ -166,14 +335,68 @@ service cloud.firestore {
 
       match /transactions/{transactionId} {
         allow read: if isOwner(uid) || isAdmin();
-        // Always self-authored (trading.ts only ever writes to the
-        // trader's own uid) — no admin create path exists or is needed.
-        allow create: if isOwner(uid);
-        // Immutable ledger — a trade record is never edited after the
-        // fact, by anyone, including admins.
+        // Every transaction is owner-created (src/lib/trading.ts) — there
+        // is no separate admin-authored trade record anymore now that
+        // Trade Outcome Control is a persistent mode a user's OWN
+        // settlement reads, rather than an admin acting on someone else's
+        // trade directly. respectsGlobalOutcomeMode() (above) is the
+        // rules-side check that a closing record's realizedPnl sign
+        // actually matches whatever mode was active at creation time.
+        allow create: if isOwner(uid) && respectsGlobalOutcomeMode();
+        // Immutable forever once created — no update path exists for
+        // anyone, admins included.
         allow update: if false;
         // Only reached by the account-deletion cleanup flow (owner only —
         // admins never delete a user's trade history).
+        allow delete: if isOwner(uid);
+      }
+
+      // Timed/binary-style contracts (src/lib/timedTrading.ts) — a
+      // DIFFERENT product from the pooled holdings/shorts above: each one
+      // is its own independent document, opens OPEN, and settles itself to
+      // CLOSED exactly once when its scheduled time arrives. Every
+      // read/write is owner-only (settlement runs as the trader's own
+      // write, triggered by their own client's background sweep — see
+      // TimedTradesContext — never by an admin acting on someone else's
+      // trade), with admin read access for visibility.
+      match /timedTrades/{tradeId} {
+        allow read: if isOwner(uid) || isAdmin();
+
+        // A fresh OPEN trade: exactly the fields src/lib/timedTrading.ts's
+        // openTimedTrade writes. `durationSeconds` is restricted to the
+        // four real duration options — everything else about the schedule
+        // (see timedTradeDeadline above) is derived from `openedAt`, which
+        // this create call can only ever set via a serverTimestamp()
+        // sentinel (Firestore resolves it to the true commit time), so
+        // there's nothing client-clock-derived left to validate here.
+        // `scheduledCloseAt` is stored only for the countdown UI's
+        // convenience and is intentionally NOT security-checked — a wrong
+        // value there could make the display's countdown inaccurate, never
+        // the actual settlement gate below.
+        allow create: if isOwner(uid) &&
+          request.resource.data.status == 'OPEN' &&
+          request.resource.data.direction in ['LONG', 'SHORT'] &&
+          request.resource.data.investedAmount is number && request.resource.data.investedAmount > 0 &&
+          request.resource.data.entryPrice is number && request.resource.data.entryPrice > 0 &&
+          request.resource.data.quantity is number && request.resource.data.quantity > 0 &&
+          request.resource.data.durationSeconds in [60, 300, 900, 3600] &&
+          request.resource.data.scheduledCloseAt is timestamp;
+
+        // Settlement: OPEN -> CLOSED exactly once, and only once
+        // `request.time` (the REAL server time, never the client's) has
+        // actually reached this trade's own server-resolved deadline. This
+        // is what makes settleTimedTradeIfDue's duplicate-safety
+        // (re-reading `status` fresh inside its own transaction) also hold
+        // up against a client that tries to skip straight to calling this
+        // update rule itself, or one whose local clock is arbitrarily wrong.
+        allow update: if isOwner(uid) &&
+          resource.data.status == 'OPEN' &&
+          request.resource.data.status == 'CLOSED' &&
+          request.time >= timedTradeDeadline(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'exitPrice', 'closedAt', 'result', 'realizedPnl', 'returnAmount', 'adminControlled', 'adminAction', 'adminActionBy', 'forcedResult']);
+
+        // Only reached by the account-deletion cleanup flow.
         allow delete: if isOwner(uid);
       }
 
@@ -243,6 +466,47 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // KYC verification workflow (src/lib/kyc.ts) — a SIMULATED identity
+    // check for a course project; see the schema comment above. Top-level
+    // collection so an admin's "every submission across every user" query
+    // in AdminKyc.tsx is a plain collection read — no collection-group
+    // index required.
+    match /kycSubmissions/{submissionId} {
+      // A user can only ever file a submission for themselves, in a fresh
+      // 'pending' state with no reviewer fields set — they can't forge an
+      // already-verified submission or claim a reviewer identity.
+      // userEmail must match their own profile, same integrity check as
+      // balanceRequests' create rule.
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.userEmail ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.reviewedAt == null &&
+        request.resource.data.reviewedBy == null &&
+        request.resource.data.rejectionReason == null;
+
+      // Owner can read/list only their own submissions (their KYC history);
+      // an admin can read/list every submission.
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Owners never get update access at all — resubmitting after a
+      // rejection creates a brand-new document (see the schema comment),
+      // so there is nothing for an owner to legitimately update on an
+      // existing one. Only an admin can move a submission off 'pending',
+      // and only to 'verified'/'rejected', touching nothing but the
+      // review fields, and always stamping their own uid as reviewer.
+      allow update: if isAdmin() &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['verified', 'rejected'] &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'rejectionReason', 'updatedAt']) &&
+        request.resource.data.reviewedBy == request.auth.uid;
+
+      // Permanent record either way — nobody deletes a submission, admins included.
+      allow delete: if false;
+    }
+
     // Collection-group read for the admin dashboard/trade feed
     // (collectionGroup('transactions') in AdminDashboard.tsx / AdminTrades.tsx).
     // Firestore requires a separate top-level `{path=**}` wildcard match for
@@ -263,6 +527,24 @@ service cloud.firestore {
     // Firebase console.
     match /{path=**}/supportChat/{threadId} {
       allow read: if isAdmin();
+    }
+
+    // Global Trade Outcome Control — one singleton document
+    // (systemSettings/tradeOutcomeControl) read by EVERY signed-in user's
+    // own trade-settlement code (src/lib/trading.ts) to price a closing
+    // trade, and written only by an admin from the Trade Outcome Control
+    // page (src/lib/admin.ts's setGlobalTradeOutcomeMode). Read access is
+    // deliberately broad (any signed-in user, not just admins) because
+    // that settlement logic runs as the OWNER's own write, not through any
+    // admin-privileged path — see respectsGlobalOutcomeMode() above for
+    // how the mode is still enforced even if a client tried to ignore it.
+    match /systemSettings/{settingId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() &&
+        settingId == 'tradeOutcomeControl' &&
+        request.resource.data.mode in ['NORMAL', 'FORCE_WIN', 'FORCE_LOSS'] &&
+        request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
     }
 
     match /adminActions/{actionId} {

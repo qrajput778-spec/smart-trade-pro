@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, collectionGroup, getCountFromServer, getDocs } from 'firebase/firestore'
-import { ArrowRight, LineChart, MessageCircle, ShieldCheck, Users } from 'lucide-react'
+import { collection, collectionGroup, getCountFromServer, getDocs, query, where } from 'firebase/firestore'
+import { ArrowRight, BadgeCheck, LineChart, MessageCircle, ShieldCheck, Users } from 'lucide-react'
 import Card from '../../components/Card'
 import PageContainer from '../../components/PageContainer'
 import { db } from '../../lib/firebase'
@@ -12,6 +12,9 @@ interface AdminStats {
   totalTrades: number
   totalVolume: number
   mostTradedSymbol: string | null
+  pendingKyc: number
+  verifiedKyc: number
+  rejectedKyc: number
 }
 
 export default function AdminDashboard() {
@@ -31,13 +34,20 @@ export default function AdminDashboard() {
     async function load() {
       try {
         const firestore = db!
-        const [usersCountSnapshot, transactionsSnapshot] = await Promise.all([
-          getCountFromServer(collection(firestore, 'users')),
-          // Collection-group read across every user's transactions subcollection.
-          // Requires the draft admin rule + a collection-group index on
-          // "timestamp" once the rules/index are actually set up in Firebase.
-          getDocs(collectionGroup(firestore, 'transactions')),
-        ])
+        const kycSubmissions = collection(firestore, 'kycSubmissions')
+        const [usersCountSnapshot, transactionsSnapshot, pendingKycSnapshot, verifiedKycSnapshot, rejectedKycSnapshot] =
+          await Promise.all([
+            getCountFromServer(collection(firestore, 'users')),
+            // Collection-group read across every user's transactions subcollection.
+            // Requires the draft admin rule + a collection-group index on
+            // "timestamp" once the rules/index are actually set up in Firebase.
+            getDocs(collectionGroup(firestore, 'transactions')),
+            // Single equality filter, no orderBy — no index required, same
+            // pattern as every other admin count query on this page.
+            getCountFromServer(query(kycSubmissions, where('status', '==', 'pending'))),
+            getCountFromServer(query(kycSubmissions, where('status', '==', 'verified'))),
+            getCountFromServer(query(kycSubmissions, where('status', '==', 'rejected'))),
+          ])
 
         if (cancelled) return
 
@@ -65,6 +75,9 @@ export default function AdminDashboard() {
           totalTrades: transactionsSnapshot.size,
           totalVolume,
           mostTradedSymbol,
+          pendingKyc: pendingKycSnapshot.data().count,
+          verifiedKyc: verifiedKycSnapshot.data().count,
+          rejectedKyc: rejectedKycSnapshot.data().count,
         })
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -138,7 +151,37 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+      <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-text-muted">KYC Verification</h2>
+      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+        <Link to="/admin/kyc">
+          <Card className="transition-colors hover:border-accent-gold/40">
+            <span className="text-xs uppercase tracking-wide text-text-muted">Pending KYC</span>
+            {loading ? (
+              <div className="mt-2 h-8 w-20 animate-pulse rounded bg-surface-alt" />
+            ) : (
+              <p className="mt-2 font-mono text-2xl text-accent-gold">{stats?.pendingKyc ?? '—'}</p>
+            )}
+          </Card>
+        </Link>
+        <Card>
+          <span className="text-xs uppercase tracking-wide text-text-muted">Verified KYC</span>
+          {loading ? (
+            <div className="mt-2 h-8 w-20 animate-pulse rounded bg-surface-alt" />
+          ) : (
+            <p className="mt-2 font-mono text-2xl text-success">{stats?.verifiedKyc ?? '—'}</p>
+          )}
+        </Card>
+        <Card>
+          <span className="text-xs uppercase tracking-wide text-text-muted">Rejected KYC</span>
+          {loading ? (
+            <div className="mt-2 h-8 w-20 animate-pulse rounded bg-surface-alt" />
+          ) : (
+            <p className="mt-2 font-mono text-2xl text-danger">{stats?.rejectedKyc ?? '—'}</p>
+          )}
+        </Card>
+      </div>
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-4">
         <Link to="/admin/users">
           <Card className="flex items-center justify-between transition-colors hover:border-accent-gold/40">
             <div className="flex items-center gap-3">
@@ -170,6 +213,18 @@ export default function AdminDashboard() {
               <div>
                 <p className="font-medium text-text-primary">Support Chats</p>
                 <p className="text-xs text-text-muted">Live conversations waiting for a reply.</p>
+              </div>
+            </div>
+            <ArrowRight size={16} className="text-text-muted" />
+          </Card>
+        </Link>
+        <Link to="/admin/kyc">
+          <Card className="flex items-center justify-between transition-colors hover:border-accent-gold/40">
+            <div className="flex items-center gap-3">
+              <BadgeCheck size={20} className="text-accent-gold" />
+              <div>
+                <p className="font-medium text-text-primary">KYC Verification</p>
+                <p className="text-xs text-text-muted">Review identity documents and approve or reject.</p>
               </div>
             </div>
             <ArrowRight size={16} className="text-text-muted" />

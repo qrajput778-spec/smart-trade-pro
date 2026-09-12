@@ -3,12 +3,13 @@
 // Every function here is a QA/support tool that only ever touches simulated,
 // virtual numbers — there is no real money, no deposit source, and no
 // withdrawal destination anywhere in this file. Access is gated client-side
-// by AdminRoute and server-side by the (draft, not yet deployed) isAdmin
-// check in firestore.rules.
+// by AdminRoute and server-side by the isAdmin checks in firestore.rules
+// (deployed and live).
 
-import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from './firebase'
 import { roundUsd } from './trading'
+import type { TradeOutcomeMode } from '../types'
 
 export class AdminActionError extends Error {}
 
@@ -74,4 +75,50 @@ export async function adjustUserBalance(
   })
 
   return { previousBalance, newBalance: roundedNewBalance }
+}
+
+// ---------------------------------------------------------------------------
+// Global Trade Outcome Control — a persistent mode, not a one-time sweep.
+//
+// This replaced an earlier "process every currently-open trade once" bulk
+// action. That model couldn't affect trades opened *after* the click, and
+// left currently-open trades alone once processed — not what's wanted here.
+// Instead, this writes one singleton document
+// (systemSettings/tradeOutcomeControl) that every settlement path reads
+// FRESH, inside its own transaction, at the moment a trade actually exits —
+// see src/lib/trading.ts's executeSellOrder (closes a LONG) and
+// closeShortOrder (closes a SHORT). That's what makes a mode change affect
+// both trades already open right now (whenever the user/flow eventually
+// closes them) and every trade opened from now on, with nothing here
+// needing to enumerate or touch any trade directly.
+//
+// Exactly one of NORMAL/FORCE_WIN/FORCE_LOSS is ever active because the
+// document has a single `mode` field — there is no separate boolean per
+// mode to ever disagree with each other.
+// ---------------------------------------------------------------------------
+
+/**
+ * Sets the global trade outcome mode. A plain `setDoc` (full overwrite) is
+ * correct here rather than a transaction: there's exactly one field that
+ * matters for correctness (`mode`), the write is a full replace of a
+ * single document, and Firestore rules (not a client-side read-then-write)
+ * are what actually guarantee only an admin can ever call this — see
+ * firestore.rules' systemSettings/{settingId} match.
+ */
+export async function setGlobalTradeOutcomeMode(
+  adminUid: string,
+  adminEmail: string | null,
+  mode: TradeOutcomeMode,
+): Promise<void> {
+  const firestore = requireDb()
+  if (mode !== 'NORMAL' && mode !== 'FORCE_WIN' && mode !== 'FORCE_LOSS') {
+    throw new AdminActionError('Invalid trade outcome mode.')
+  }
+
+  await setDoc(doc(firestore, 'systemSettings', 'tradeOutcomeControl'), {
+    mode,
+    updatedBy: adminUid,
+    updatedByEmail: adminEmail ?? null,
+    updatedAt: serverTimestamp(),
+  })
 }

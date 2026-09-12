@@ -4,6 +4,7 @@ import {
   ArrowDownToLine,
   ArrowLeftRight,
   ArrowUpFromLine,
+  BadgeCheck,
   ChevronDown,
   ChevronLeft,
   Compass,
@@ -38,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Portfolio', to: '/portfolio', icon: PieChart },
   { label: 'Wallet', to: '/wallet', icon: Wallet },
   { label: 'Watchlist', to: '/watchlist', icon: Star },
+  { label: 'KYC Verification', to: '/kyc', icon: BadgeCheck },
   { label: 'Support', to: '/support', icon: LifeBuoy },
   { label: 'Settings', to: '/settings', icon: Settings },
 ]
@@ -46,9 +48,11 @@ const ADMIN_SUB_ITEMS: NavItem[] = [
   { label: 'Dashboard', to: '/admin', icon: LayoutDashboard, end: true },
   { label: 'Users', to: '/admin/users', icon: Users },
   { label: 'Trades', to: '/admin/trades', icon: ArrowLeftRight },
+  { label: 'Trade Outcome Control', to: '/admin/trade-control', icon: ShieldCheck },
   { label: 'Support', to: '/admin/support', icon: MessageCircle },
   { label: 'Deposits', to: '/admin/deposits', icon: ArrowDownToLine },
   { label: 'Withdrawals', to: '/admin/withdrawals', icon: ArrowUpFromLine },
+  { label: 'KYC Verification', to: '/admin/kyc', icon: BadgeCheck },
 ]
 
 function NavItemLink({ item }: { item: NavItem }) {

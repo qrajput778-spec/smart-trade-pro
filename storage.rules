@@ -1,0 +1,70 @@
+rules_version = '2';
+
+// Firebase Storage security rules for SMART TRADE PRO.
+//
+// The only thing stored here is KYC verification document uploads
+// (src/lib/kyc.ts) — a SIMULATED identity-verification workflow for a
+// university course project. See README.md's top-of-file notice: nothing
+// uploaded here is checked against a real identity, and no one should
+// ever upload a real government ID document to it, even for testing —
+// but the files themselves are real uploads to a real bucket, so they're
+// still locked down exactly as if they mattered: only the uploading user
+// and admins can ever read them, and they are never public.
+//
+// Layout: kyc/{userId}/{submissionId}/{docType}
+//   docType is one of idCard | drivingLicense | passport | photo.
+// Firestore's kycSubmissions/{id} docs (firestore.rules) store each
+// file's path here, never a download URL and never the file itself.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Mirrors firestore.rules' isAdmin() exactly — Storage rules can read
+    // Firestore data via firestore.get(), so this is the same single
+    // source of truth (users/{uid}.isAdmin), not a second admin concept.
+    function isAdmin() {
+      return isSignedIn() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    match /kyc/{userId}/{submissionId}/{docType} {
+      // Owner and admin can both view the file (admin to review it, owner
+      // in case a future screen lets them see what they submitted).
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Only the owner can upload, only to their own path, only an
+      // accepted type, and within the type's own size cap — matches
+      // src/lib/kyc.ts's own client-side validation (KYC_IMAGE_MAX_FILE_SIZE
+      // / KYC_PDF_MAX_FILE_SIZE / KYC_ID_DOC_ACCEPT / KYC_PHOTO_ACCEPT),
+      // enforced here too since client-side checks alone are never a
+      // security boundary. Images are capped much tighter (1 MB) than PDFs
+      // (10 MB) — a phone photo of an ID or a selfie has no reason to be
+      // any bigger.
+      allow write: if isOwner(userId) &&
+        (
+          (request.resource.contentType == 'application/pdf' &&
+            request.resource.size < 10 * 1024 * 1024) ||
+          (request.resource.contentType in ['image/jpeg', 'image/png'] &&
+            request.resource.size < 1 * 1024 * 1024)
+        );
+
+      // Immutable once uploaded — a submission's files are never replaced
+      // in place (resubmitting writes a new submissionId), so there's no
+      // legitimate overwrite/delete path for anyone, admins included.
+      allow delete: if false;
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

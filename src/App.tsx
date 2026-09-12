@@ -1,7 +1,9 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useNavigate, BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { MarketDataProvider } from './context/MarketDataContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { TimedTradesProvider, useTimedTrades } from './context/TimedTradesContext'
+import TimedTradeResultModal from './components/TimedTradeResultModal'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
@@ -17,13 +19,41 @@ import WalletPage from './pages/Wallet'
 import Watchlist from './pages/Watchlist'
 import Support from './pages/Support'
 import Settings from './pages/Settings'
+import Kyc from './pages/Kyc'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminUserDetail from './pages/admin/AdminUserDetail'
 import AdminTrades from './pages/admin/AdminTrades'
+import AdminTradeControl from './pages/admin/AdminTradeControl'
 import AdminSupport from './pages/admin/AdminSupport'
 import AdminDeposits from './pages/admin/AdminDeposits'
 import AdminWithdrawals from './pages/admin/AdminWithdrawals'
+import AdminKyc from './pages/admin/AdminKyc'
+
+/**
+ * Renders the single next unseen timed-trade result, if any — mounted once
+ * inside the router (see App below) so it can appear regardless of which
+ * page the user is on when a trade settles, not just the Trading Terminal.
+ * "Trade Again" just routes back to that market's Trading Terminal and
+ * closes the popup; it never places a new trade itself.
+ */
+function GlobalTimedTradeResultModal() {
+  const { pendingResults, dismissResult } = useTimedTrades()
+  const navigate = useNavigate()
+  const trade = pendingResults[0] ?? null
+
+  return (
+    <TimedTradeResultModal
+      trade={trade}
+      onClose={() => trade && dismissResult(trade.id)}
+      onTradeAgain={() => {
+        if (!trade) return
+        dismissResult(trade.id)
+        navigate(`/trade/${trade.symbol}`)
+      }}
+    />
+  )
+}
 
 export default function App() {
   return (
@@ -31,6 +61,7 @@ export default function App() {
       <AuthProvider>
         <MarketDataProvider>
         <BrowserRouter>
+        <TimedTradesProvider>
           <Layout>
             <Routes>
               <Route path="/" element={<Landing />} />
@@ -109,6 +140,14 @@ export default function App() {
                 }
               />
               <Route
+                path="/kyc"
+                element={
+                  <ProtectedRoute>
+                    <Kyc />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/admin"
                 element={
                   <AdminRoute>
@@ -141,6 +180,14 @@ export default function App() {
                 }
               />
               <Route
+                path="/admin/trade-control"
+                element={
+                  <AdminRoute>
+                    <AdminTradeControl />
+                  </AdminRoute>
+                }
+              />
+              <Route
                 path="/admin/support"
                 element={
                   <AdminRoute>
@@ -164,8 +211,18 @@ export default function App() {
                   </AdminRoute>
                 }
               />
+              <Route
+                path="/admin/kyc"
+                element={
+                  <AdminRoute>
+                    <AdminKyc />
+                  </AdminRoute>
+                }
+              />
             </Routes>
           </Layout>
+          <GlobalTimedTradeResultModal />
+        </TimedTradesProvider>
         </BrowserRouter>
         </MarketDataProvider>
       </AuthProvider>

@@ -1,23 +1,14 @@
-import { Link } from 'react-router-dom'
-import { Compass } from 'lucide-react'
-import Card from '../components/Card'
-import Button from '../components/Button'
+import { Navigate } from 'react-router-dom'
+import { DEFAULT_TRADE_SYMBOL } from '../lib/constants'
 
-/** Landing spot for /trade with no symbol yet — /trade/:symbol is the real terminal. */
+/**
+ * /trade with no symbol yet. Previously this rendered a dead-end "pick a
+ * market" empty state — now it immediately opens the default market
+ * (src/lib/constants.ts's DEFAULT_TRADE_SYMBOL) instead, matching how
+ * clicking a coin from Markets.tsx already lands directly on
+ * /trade/:symbol. `replace` so this redirect doesn't leave a bare "/trade"
+ * entry in browser history for the back button to bounce off of.
+ */
 export default function TradeIndex() {
-  return (
-    <div className="mx-auto max-w-2xl px-6 py-16">
-      <Card className="flex flex-col items-center gap-4 py-12 text-center">
-        <Compass size={32} className="text-accent-gold" />
-        <h1 className="text-xl font-semibold text-text-primary">Pick a market to trade</h1>
-        <p className="max-w-sm text-sm text-text-muted">
-          The trading terminal needs a symbol first. Head to Markets and choose a coin to open
-          its terminal.
-        </p>
-        <Link to="/markets">
-          <Button variant="primary">Browse Markets</Button>
-        </Link>
-      </Card>
-    </div>
-  )
+  return <Navigate to={`/trade/${DEFAULT_TRADE_SYMBOL}`} replace />
 }

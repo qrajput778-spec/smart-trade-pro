@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { collection, doc, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { collection, doc, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { AlertTriangle, ArrowLeft, CheckCircle2, ShieldCheck } from 'lucide-react'
 import Card from '../../components/Card'
 import Button from '../../components/Button'
 import TextField from '../../components/TextField'
+import Badge from '../../components/Badge'
 import PageContainer from '../../components/PageContainer'
 import { useAuth } from '../../context/AuthContext'
 import { useMarketData } from '../../context/MarketDataContext'
@@ -12,6 +13,7 @@ import { db } from '../../lib/firebase'
 import { formatUsd } from '../../lib/constants'
 import { summarizeHoldings } from '../../lib/portfolioMath'
 import { adjustUserBalance, AdminActionError } from '../../lib/admin'
+import { KYC_STATUS_META, type KycDisplayStatus } from '../../lib/kyc'
 import type { HoldingsMap } from '../../types'
 
 interface AccountState {
@@ -60,6 +62,28 @@ export default function AdminUserDetail() {
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+
+  // Optional context for the admin reviewing this account — just this
+  // user's most recent KYC submission's status, not the full detail
+  // (that lives at /admin/kyc). One-time fetch is enough; it doesn't need
+  // to be live here.
+  const [kycStatus, setKycStatus] = useState<KycDisplayStatus | null>(null)
+
+  useEffect(() => {
+    if (!uid || !db) return
+    getDocs(query(collection(db, 'kycSubmissions'), where('userId', '==', uid)))
+      .then((snapshot) => {
+        const entries = snapshot.docs.map((docSnapshot) => {
+          const data = docSnapshot.data()
+          const submittedAt = data.submittedAt?.toMillis ? data.submittedAt.toMillis() : 0
+          const status: KycDisplayStatus = data.status === 'verified' || data.status === 'rejected' ? data.status : 'pending'
+          return { status, submittedAt }
+        })
+        entries.sort((a, b) => b.submittedAt - a.submittedAt)
+        setKycStatus(entries.length > 0 ? entries[0].status : 'not_started')
+      })
+      .catch(() => setKycStatus(null))
+  }, [uid])
 
   useEffect(() => {
     if (!uid || !db) {
@@ -232,7 +256,14 @@ export default function AdminUserDetail() {
       <header className="mt-4 flex items-center gap-2">
         <ShieldCheck size={22} className="text-accent-gold" />
         <div>
-          <h1 className="text-2xl font-semibold text-text-primary">{account.displayName}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold text-text-primary">{account.displayName}</h1>
+            {kycStatus && (
+              <Link to="/admin/kyc">
+                <Badge tone={KYC_STATUS_META[kycStatus].tone}>{KYC_STATUS_META[kycStatus].label}</Badge>
+              </Link>
+            )}
+          </div>
           <p className="mt-1 text-sm text-text-muted">
             {account.email} · Joined{' '}
             {account.createdAt
