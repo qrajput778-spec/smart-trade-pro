@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { Bell, LogOut, Moon, Search, Sun } from 'lucide-react'
+import { Bell, LogOut, Moon, Search, ShieldCheck, Sun } from 'lucide-react'
 import PriceTicker from './PriceTicker'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
 import { useTheme } from '../context/ThemeContext'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 import { auth } from '../lib/firebase'
 
 export default function Topbar() {
   const { user } = useAuth()
   const { prices, loading } = useMarketData()
   const { theme, toggleTheme } = useTheme()
+  // Nothing else in the normal app hints an admin area exists unless this is true.
+  const { isAdmin } = useIsAdmin(user?.uid)
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -83,6 +86,15 @@ export default function Topbar() {
                   <p className="truncate text-sm font-medium text-text-primary">{displayLabel}</p>
                   <p className="truncate text-xs text-text-muted">{user?.email}</p>
                 </div>
+                {isAdmin && (
+                  <Link
+                    to="/admin"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-accent-gold transition-colors hover:bg-accent-gold-soft"
+                  >
+                    <ShieldCheck size={16} /> Open Admin Panel
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={handleLogout}

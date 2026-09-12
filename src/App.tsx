@@ -7,6 +7,7 @@ import TimedTradeResultModal from './components/TimedTradeResultModal'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
+import AdminLayout from './components/admin/AdminLayout'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
@@ -147,78 +148,26 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              {/* Standalone admin shell (see components/admin/AdminLayout) — every
+                  /admin/* route renders inside it via Outlet, gated as a group by
+                  AdminRoute so a non-admin never even mounts the admin chrome. */}
               <Route
-                path="/admin"
                 element={
                   <AdminRoute>
-                    <AdminDashboard />
+                    <AdminLayout />
                   </AdminRoute>
                 }
-              />
-              <Route
-                path="/admin/users"
-                element={
-                  <AdminRoute>
-                    <AdminUsers />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/users/:uid"
-                element={
-                  <AdminRoute>
-                    <AdminUserDetail />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/trades"
-                element={
-                  <AdminRoute>
-                    <AdminTrades />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/trade-control"
-                element={
-                  <AdminRoute>
-                    <AdminTradeControl />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/support"
-                element={
-                  <AdminRoute>
-                    <AdminSupport />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/deposits"
-                element={
-                  <AdminRoute>
-                    <AdminDeposits />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/withdrawals"
-                element={
-                  <AdminRoute>
-                    <AdminWithdrawals />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/kyc"
-                element={
-                  <AdminRoute>
-                    <AdminKyc />
-                  </AdminRoute>
-                }
-              />
+              >
+                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/users/:uid" element={<AdminUserDetail />} />
+                <Route path="/admin/trades" element={<AdminTrades />} />
+                <Route path="/admin/trade-control" element={<AdminTradeControl />} />
+                <Route path="/admin/support" element={<AdminSupport />} />
+                <Route path="/admin/deposits" element={<AdminDeposits />} />
+                <Route path="/admin/withdrawals" element={<AdminWithdrawals />} />
+                <Route path="/admin/kyc" element={<AdminKyc />} />
+              </Route>
             </Routes>
           </Layout>
           <GlobalTimedTradeResultModal />

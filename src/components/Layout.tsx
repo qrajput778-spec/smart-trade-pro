@@ -22,6 +22,12 @@ export default function Layout({ children }: { children: ReactNode }) {
     )
   }
 
+  // /admin/* has its own standalone shell (see components/admin/AdminLayout)
+  // with its own sidebar/header — never render the normal user chrome there.
+  if (location.pathname === '/admin' || location.pathname.startsWith('/admin/')) {
+    return <>{children}</>
+  }
+
   return (
     <div className="flex min-h-screen w-full bg-background text-text-primary">
       <Sidebar />
