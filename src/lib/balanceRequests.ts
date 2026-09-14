@@ -34,7 +34,7 @@ import {
 import { db } from './firebase'
 import { roundUsd } from './trading'
 import { formatUsd } from './constants'
-import type { BalanceRequestType } from '../types'
+import type { BalanceRequestType, DepositNetwork } from '../types'
 
 /** Thrown for expected, user-facing balance-request problems — its message is safe to show directly. */
 export class BalanceRequestError extends Error {}
@@ -64,7 +64,13 @@ export interface ReviewResult {
  * Submits a deposit request. Does NOT touch balance — it stays 'pending'
  * until an admin approves it from /admin/deposits.
  */
-export async function submitDepositRequest(uid: string, email: string, amount: number): Promise<void> {
+export async function submitDepositRequest(
+  uid: string,
+  email: string,
+  amount: number,
+  depositNetwork: DepositNetwork,
+  depositAddress: string,
+): Promise<void> {
   const firestore = requireDb()
   const rounded = validateAmount(amount)
 
@@ -78,6 +84,8 @@ export async function submitDepositRequest(uid: string, email: string, amount: n
     reviewedAt: null,
     reviewedBy: null,
     adminNote: null,
+    depositNetwork,
+    depositAddress,
   })
 }
 

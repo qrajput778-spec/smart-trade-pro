@@ -6,9 +6,11 @@ This is a university course project: a SIMULATED crypto trading dashboard.
 - There is NO real deposit or withdrawal of funds anywhere in this app —
   deposit/withdrawal "requests" (src/lib/balanceRequests.ts) only ever move
   the virtual balance number, after admin approval; no real payment rail.
-- There is NO cryptocurrency wallet address collection anywhere in this app
-  (the Deposit modal's "demo address" is a fixed fake string shown for UI
-  fidelity only — never a real generated address, never actually funded).
+- The Deposit modal displays three configured cryptocurrency deposit addresses:
+  BNB Smart Chain (BEP20), Tron (TRC20), and Ethereum (ERC20). They are
+  presentation-only details in this client application: no on-chain payment
+  confirmation or automatic deposit detection is implemented. Deposit requests
+  remain simulated and are credited only after an admin approves them.
 - There IS a KYC / identity-verification workflow (src/pages/Kyc.tsx,
   src/pages/admin/AdminKyc*.tsx) — but it exists to demonstrate a realistic
   admin-review workflow for a course assignment, not to perform real

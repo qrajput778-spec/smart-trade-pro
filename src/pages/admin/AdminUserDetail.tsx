@@ -7,6 +7,7 @@ import Button from '../../components/Button'
 import TextField from '../../components/TextField'
 import Badge from '../../components/Badge'
 import PageContainer from '../../components/PageContainer'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
 import { useMarketData } from '../../context/MarketDataContext'
 import { db } from '../../lib/firebase'
@@ -62,6 +63,7 @@ export default function AdminUserDetail() {
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const [pendingAdjustment, setPendingAdjustment] = useState<{ balance: number; reason: string } | null>(null)
 
   // Optional context for the admin reviewing this account — just this
   // user's most recent KYC submission's status, not the full detail
@@ -184,34 +186,14 @@ export default function AdminUserDetail() {
     }
   }, [uid])
 
-  async function handleAdjustBalance(event: FormEvent) {
-    event.preventDefault()
+  async function performAdjustBalance(adjustment: { balance: number; reason: string }) {
     if (!uid || !adminUser) return
 
     setActionError(null)
     setActionSuccess(null)
-
-    const parsed = Number.parseFloat(newBalanceInput)
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      setActionError('Enter a valid balance of zero or more.')
-      return
-    }
-    if (!reason.trim()) {
-      setActionError('A reason is required for accountability.')
-      return
-    }
-    if (
-      !window.confirm(
-        `Set this user's virtual balance to ${formatUsd(parsed)}? This is a simulated-funds ` +
-          'adjustment only, logged with your admin uid and the reason you entered.',
-      )
-    ) {
-      return
-    }
-
     setSubmitting(true)
     try {
-      const result = await adjustUserBalance(adminUser.uid, uid, parsed, reason)
+      const result = await adjustUserBalance(adminUser.uid, uid, adjustment.balance, adjustment.reason)
       setActionSuccess(
         `Balance updated: ${formatUsd(result.previousBalance)} → ${formatUsd(result.newBalance)}.`,
       )
@@ -222,6 +204,20 @@ export default function AdminUserDetail() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  function handleAdjustBalance(event: FormEvent) {
+    event.preventDefault()
+    const parsed = Number.parseFloat(newBalanceInput)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setActionError('Enter a valid balance of zero or more.')
+      return
+    }
+    if (!reason.trim()) {
+      setActionError('A reason is required for accountability.')
+      return
+    }
+    setPendingAdjustment({ balance: parsed, reason: reason.trim() })
   }
 
   if (accountLoading) {
@@ -474,6 +470,22 @@ export default function AdminUserDetail() {
           </form>
         </Card>
       </section>
+      <ConfirmDialog
+        open={pendingAdjustment !== null}
+        onClose={() => setPendingAdjustment(null)}
+        title="Adjust Virtual Balance?"
+        description={
+          pendingAdjustment
+            ? `Set this user's virtual balance to ${formatUsd(pendingAdjustment.balance)}? This simulated-funds adjustment is logged with your admin account and the reason you entered.`
+            : ''
+        }
+        confirmLabel="Adjust Balance"
+        loadingLabel="Adjusting…"
+        variant="danger"
+        onConfirm={() => {
+          if (pendingAdjustment) return performAdjustBalance(pendingAdjustment)
+        }}
+      />
     </PageContainer>
   )
 }

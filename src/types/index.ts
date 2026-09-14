@@ -61,6 +61,7 @@ export interface UserAccountDocument {
 
 export type BalanceRequestType = 'deposit' | 'withdrawal'
 export type BalanceRequestStatus = 'pending' | 'approved' | 'rejected'
+export type DepositNetwork = 'BNB Smart Chain (BEP20)' | 'Tron (TRC20)' | 'Ethereum (ERC20)'
 
 /**
  * One user-submitted deposit or withdrawal request, at balanceRequests/{id}
@@ -81,6 +82,10 @@ export interface BalanceRequestDoc {
   reviewedAt: unknown | null
   reviewedBy: string | null
   adminNote: string | null
+  /** Deposit-only: the network selected in DepositModal when the request was created. */
+  depositNetwork?: DepositNetwork
+  /** Deposit-only: the configured address shown for that selected network. */
+  depositAddress?: string
   /**
    * Withdrawal-only, informational: the destination the user typed in the
    * Withdraw modal. Purely for the admin to see while reviewing — there's

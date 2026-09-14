@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock, Copy, DollarSign, Hexagon, Gem, ShieldAlert, Triangle } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock, Copy, DollarSign, Hexagon, Gem, Triangle } from 'lucide-react'
 import Button from './Button'
 import Modal from './Modal'
 import { formatUsd } from '../lib/constants'
 import { BalanceRequestError, submitDepositRequest } from '../lib/balanceRequests'
+import type { DepositNetwork } from '../types'
 
 interface DepositModalProps {
   open: boolean
@@ -14,44 +15,40 @@ interface DepositModalProps {
 
 /**
  * Purely cosmetic "transfer gateway" selector — Smart Trade Pro is a
- * paper-trading simulator with no real payment rails, so these don't
- * change anything about how the request is processed (every one of them
- * ends up calling the exact same submitDepositRequest). They exist only so
- * the flow reads like a real crypto-exchange deposit screen. The
- * `demoAddress` on each is a fixed, obviously-fake placeholder string —
- * never a real generated/derived blockchain address — shown with an
- * explicit warning not to send anything real to it.
+ * paper-trading simulator, so these do not change how a request is
+ * processed (every one calls the same submitDepositRequest). They only
+ * select which configured deposit address is displayed in the UI.
  */
 const DEPOSIT_GATEWAYS = [
   {
     id: 'bep20',
-    name: 'BNB Smart Chain (BEP20)',
+    name: 'BNB Smart Chain (BEP20)' as DepositNetwork,
     subtitle: 'BSC · Binance Smart Chain (simulated)',
     minNote: 'Min >0.01 USD (simulated)',
     eta: '≈1 min',
     icon: Hexagon,
     iconClassName: 'bg-amber-500/15 text-amber-400',
-    demoAddress: '0x71C7a3B29D4E5F6a7B8c9D0e1F2a3B4c5D6e7F80',
+    address: '0x384530e620afe8c3257d1ed531b124ce618e63a8',
   },
   {
     id: 'trc20',
-    name: 'Tron (TRC20)',
+    name: 'Tron (TRC20)' as DepositNetwork,
     subtitle: 'TRX · Tron Network (simulated)',
     minNote: 'Min >0.01 USD (simulated)',
     eta: null,
     icon: Triangle,
     iconClassName: 'bg-red-500/15 text-red-400',
-    demoAddress: 'TDem0F3k2M8pQ7rS1tU4vW6xY0zA2bC3dE9fGh',
+    address: 'TEBccrzx8sXVmD6hfhtyM6uAmULwfcGqUw',
   },
   {
     id: 'erc20',
-    name: 'Ethereum (ERC20)',
+    name: 'Ethereum (ERC20)' as DepositNetwork,
     subtitle: 'ETH · Ethereum Network (simulated)',
     minNote: 'Min >0.001 USD (simulated)',
     eta: '≈2 mins',
     icon: Gem,
     iconClassName: 'bg-blue-500/15 text-blue-400',
-    demoAddress: '0xDe0f1A2b3C4d5E6f7890AbCdEf1234567890aBcD',
+    address: '0x384530e620afe8c3257d1ed531b124ce618e63a8',
   },
 ] as const
 
@@ -94,7 +91,7 @@ export default function DepositModal({ open, onClose, uid, email }: DepositModal
 
   async function handleCopyAddress() {
     try {
-      await navigator.clipboard.writeText(gateway.demoAddress)
+      await navigator.clipboard.writeText(gateway.address)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -106,10 +103,21 @@ export default function DepositModal({ open, onClose, uid, email }: DepositModal
     setSubmitting(true)
     setError(null)
     try {
-      await submitDepositRequest(uid, email, submittedAmount)
+      await submitDepositRequest(uid, email, submittedAmount, gateway.name, gateway.address)
       setStep('success')
     } catch (err) {
-      setError(err instanceof BalanceRequestError ? err.message : 'Could not submit deposit request — please try again.')
+      // Preserve the concise production copy, but make a Firestore failure
+      // diagnosable from the development UI and browser console.
+      // eslint-disable-next-line no-console
+      console.error('[deposit] request submission failed', err)
+      const code = typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : null
+      setError(
+        err instanceof BalanceRequestError
+          ? err.message
+          : import.meta.env.DEV && code
+            ? `Could not submit deposit request (${code}). Check the Firestore rules and account profile.`
+            : 'Could not submit deposit request — please try again.',
+      )
     } finally {
       setSubmitting(false)
     }
@@ -202,17 +210,12 @@ export default function DepositModal({ open, onClose, uid, email }: DepositModal
             </p>
           </div>
 
-          <p className="flex items-center gap-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2.5 text-xs text-danger">
-            <ShieldAlert size={14} className="flex-none" />
-            This is a demo address, not real.
-          </p>
-
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
-              Demo deposit address ({gateway.id.toUpperCase()})
+              Deposit address ({gateway.id.toUpperCase()})
             </p>
             <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-surface-alt px-3 py-2.5">
-              <span className="flex-1 truncate font-mono text-xs text-accent-gold">{gateway.demoAddress}</span>
+              <span className="flex-1 break-all font-mono text-xs text-accent-gold">{gateway.address}</span>
               <button
                 type="button"
                 onClick={handleCopyAddress}

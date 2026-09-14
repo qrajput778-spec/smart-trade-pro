@@ -10,6 +10,7 @@ import MarketCard from '../components/MarketCard'
 import MiniStat from '../components/MiniStat'
 import PageContainer from '../components/PageContainer'
 import WatchlistTable from '../components/WatchlistTable'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
@@ -44,6 +45,7 @@ export default function Dashboard() {
   const [accountError, setAccountError] = useState<string | null>(null)
 
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const [confirmAction, setConfirmAction] = useState<PendingAction>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -82,9 +84,6 @@ export default function Dashboard() {
 
   async function handleAddFunds() {
     if (!user || !db) return
-    const amountLabel = formatUsd(ADD_VIRTUAL_FUNDS_AMOUNT, { maximumFractionDigits: 0 })
-    if (!window.confirm(`Add ${amountLabel} in virtual funds to your balance?`)) return
-
     setPendingAction('add-funds')
     setActionError(null)
     try {
@@ -103,14 +102,6 @@ export default function Dashboard() {
 
   async function handleResetPortfolio() {
     if (!user || !db) return
-    if (
-      !window.confirm(
-        'Reset your portfolio? This sets your balance back to the starting amount and clears all holdings. This cannot be undone.',
-      )
-    ) {
-      return
-    }
-
     setPendingAction('reset')
     setActionError(null)
     try {
@@ -255,7 +246,7 @@ export default function Dashboard() {
             <Button
               variant="secondary"
               className="flex w-full items-center justify-center gap-2"
-              onClick={handleAddFunds}
+              onClick={() => setConfirmAction('add-funds')}
               disabled={pendingAction !== null}
             >
               <PlusCircle size={16} />
@@ -264,7 +255,7 @@ export default function Dashboard() {
             <Button
               variant="danger"
               className="flex w-full items-center justify-center gap-2"
-              onClick={handleResetPortfolio}
+              onClick={() => setConfirmAction('reset')}
               disabled={pendingAction !== null}
             >
               <RotateCcw size={16} />
@@ -278,6 +269,21 @@ export default function Dashboard() {
           </p>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        onClose={() => setConfirmAction(null)}
+        title={confirmAction === 'add-funds' ? 'Add Virtual Funds?' : 'Reset Portfolio?'}
+        description={
+          confirmAction === 'add-funds'
+            ? 'Add $1,000 in virtual funds to your balance for simulated trading?'
+            : 'Set your balance back to the starting amount and clear all holdings. This cannot be undone.'
+        }
+        confirmLabel={confirmAction === 'add-funds' ? 'Add Funds' : 'Reset Portfolio'}
+        loadingLabel={confirmAction === 'add-funds' ? 'Adding…' : 'Resetting…'}
+        variant={confirmAction === 'reset' ? 'danger' : 'primary'}
+        onConfirm={() => (confirmAction === 'add-funds' ? handleAddFunds() : handleResetPortfolio())}
+      />
 
       {/* Market Overview */}
       <section className="mt-10">

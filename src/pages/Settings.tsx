@@ -7,6 +7,7 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import TextField from '../components/TextField'
 import PageContainer from '../components/PageContainer'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { auth, db } from '../lib/firebase'
@@ -125,16 +126,10 @@ export default function Settings() {
   // ---- Danger zone: reset portfolio ----
   const [resetPending, setResetPending] = useState(false)
   const [resetError, setResetError] = useState<string | null>(null)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
 
   async function handleResetPortfolio() {
     if (!user) return
-    if (
-      !window.confirm(
-        'Reset your portfolio? This sets your balance back to the starting amount and clears all holdings and realized P&L. This cannot be undone.',
-      )
-    ) {
-      return
-    }
     setResetPending(true)
     setResetError(null)
     try {
@@ -332,7 +327,7 @@ export default function Settings() {
                 Sets your balance back to the starting amount and clears holdings and realized P&amp;L.
               </p>
             </div>
-            <Button variant="danger" onClick={handleResetPortfolio} disabled={resetPending} className="flex-none">
+            <Button variant="danger" onClick={() => setResetDialogOpen(true)} disabled={resetPending} className="flex-none">
               {resetPending ? 'Resetting…' : 'Reset Portfolio'}
             </Button>
           </div>
@@ -399,6 +394,17 @@ export default function Settings() {
           </Card>
         </div>
       )}
+
+      <ConfirmDialog
+        open={resetDialogOpen}
+        onClose={() => setResetDialogOpen(false)}
+        title="Reset Portfolio?"
+        description="Set your balance back to the starting amount and clear all holdings and realized P&L. This cannot be undone."
+        confirmLabel="Reset Portfolio"
+        loadingLabel="Resetting…"
+        variant="danger"
+        onConfirm={handleResetPortfolio}
+      />
     </PageContainer>
   )
 }

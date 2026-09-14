@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
 interface ModalProps {
@@ -20,11 +20,36 @@ interface ModalProps {
  * reliably escapes the sidebar/topbar layout instead of being clipped by it.
  */
 export default function Modal({ open, onClose, title, children, widthClassName = 'max-w-md' }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (!open) return
 
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !panelRef.current) return
+
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      if (focusable.length === 0) return
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
 
@@ -34,6 +59,7 @@ export default function Modal({ open, onClose, title, children, widthClassName =
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = previousOverflow
+      previouslyFocused?.focus()
     }
   }, [open, onClose])
 
@@ -44,6 +70,7 @@ export default function Modal({ open, onClose, title, children, widthClassName =
       <div className="absolute inset-0 animate-fade-in bg-black/70" onClick={onClose} aria-hidden="true" />
 
       <div
+        ref={panelRef}
         className={`relative flex max-h-[85vh] w-full ${widthClassName} animate-scale-in flex-col rounded-xl border border-border bg-surface shadow-2xl`}
       >
         <div className="flex flex-none items-center justify-between border-b border-border px-5 py-4">

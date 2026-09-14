@@ -6,6 +6,7 @@ import Card from './Card'
 import Button from './Button'
 import TextField from './TextField'
 import Badge from './Badge'
+import ConfirmDialog from './ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import { db } from '../lib/firebase'
 import { formatUsd } from '../lib/constants'
@@ -31,6 +32,8 @@ interface RequestRow {
   adminNote: string | null
   /** Withdrawal-only, informational — see WithdrawModal.tsx / balanceRequests.ts. */
   recipientAddress: string | null
+  depositNetwork: string | null
+  depositAddress: string | null
 }
 
 type StatusFilter = 'all' | BalanceRequestStatus
@@ -63,6 +66,7 @@ export default function BalanceRequestsAdminTable({ type }: { type: BalanceReque
   const [actionError, setActionError] = useState<string | null>(null)
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectNote, setRejectNote] = useState('')
+  const [approvalTarget, setApprovalTarget] = useState<RequestRow | null>(null)
 
   useEffect(() => {
     if (!db) {
@@ -96,6 +100,8 @@ export default function BalanceRequestsAdminTable({ type }: { type: BalanceReque
             reviewedBy: typeof data.reviewedBy === 'string' ? data.reviewedBy : null,
             adminNote: typeof data.adminNote === 'string' ? data.adminNote : null,
             recipientAddress: typeof data.recipientAddress === 'string' ? data.recipientAddress : null,
+            depositNetwork: typeof data.depositNetwork === 'string' ? data.depositNetwork : null,
+            depositAddress: typeof data.depositAddress === 'string' ? data.depositAddress : null,
           }
         })
         const filtered = allRows.filter((row) => row.type === type)
@@ -124,17 +130,6 @@ export default function BalanceRequestsAdminTable({ type }: { type: BalanceReque
 
   async function handleApprove(row: RequestRow) {
     if (!adminUser) return
-    const label = type === 'deposit' ? 'deposit' : 'withdrawal'
-    const verb = type === 'deposit' ? 'increase' : 'decrease'
-    if (
-      !window.confirm(
-        `Approve this ${formatUsd(row.amount)} ${label} for ${row.userEmail}? This will ${verb} their ` +
-          "virtual balance by that amount and can't be undone from here.",
-      )
-    ) {
-      return
-    }
-
     setProcessingId(row.id)
     setActionError(null)
     try {
@@ -263,6 +258,11 @@ export default function BalanceRequestsAdminTable({ type }: { type: BalanceReque
                           to: {row.recipientAddress}
                         </p>
                       )}
+                      {type === 'deposit' && row.depositNetwork && (
+                        <p className="mt-0.5 max-w-[220px] truncate font-mono text-[11px] text-text-muted" title={row.depositAddress ?? row.depositNetwork}>
+                          via {row.depositNetwork}{row.depositAddress ? ` · ${row.depositAddress}` : ''}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono text-text-primary">{formatUsd(row.amount)}</td>
                     <td className="px-4 py-3">
@@ -287,7 +287,7 @@ export default function BalanceRequestsAdminTable({ type }: { type: BalanceReque
                             variant="secondary"
                             className="flex items-center gap-1 px-2.5 py-1.5 text-xs"
                             disabled={processingId === row.id}
-                            onClick={() => handleApprove(row)}
+                            onClick={() => setApprovalTarget(row)}
                           >
                             <Check size={14} /> Approve
                           </Button>
@@ -337,6 +337,23 @@ export default function BalanceRequestsAdminTable({ type }: { type: BalanceReque
           </tbody>
         </table>
       </Card>
+      <ConfirmDialog
+        open={approvalTarget !== null}
+        onClose={() => setApprovalTarget(null)}
+        title={type === 'deposit' ? 'Approve Deposit?' : 'Approve Withdrawal?'}
+        description={
+          approvalTarget
+            ? `Approve this ${formatUsd(approvalTarget.amount)} ${type} for ${approvalTarget.userEmail}? This will ${
+                type === 'deposit' ? 'increase' : 'decrease'
+              } their virtual balance by that amount and cannot be undone from here.`
+            : ''
+        }
+        confirmLabel="Approve Request"
+        loadingLabel="Approving…"
+        onConfirm={() => {
+          if (approvalTarget) return handleApprove(approvalTarget)
+        }}
+      />
     </div>
   )
 }

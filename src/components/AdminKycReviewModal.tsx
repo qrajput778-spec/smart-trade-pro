@@ -5,6 +5,7 @@ import Card from './Card'
 import Button from './Button'
 import TextField from './TextField'
 import Badge from './Badge'
+import ConfirmDialog from './ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import {
   KYC_DOC_TYPE_LABELS,
@@ -54,6 +55,7 @@ export default function AdminKycReviewModal({ submission, userDisplayName, histo
   const [actionError, setActionError] = useState<string | null>(null)
   const [rejecting, setRejecting] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  const [approveConfirmOpen, setApproveConfirmOpen] = useState(false)
 
   const docs: { type: KycDocumentType; info: KycDocumentInfo | null }[] = DOC_ORDER.map((type) => ({
     type,
@@ -82,13 +84,6 @@ export default function AdminKycReviewModal({ submission, userDisplayName, histo
 
   async function handleApprove() {
     if (!adminUser) return
-    if (
-      !window.confirm(
-        `Approve identity verification for ${submission.userEmail}? This marks their account as Verified.`,
-      )
-    ) {
-      return
-    }
     setProcessing(true)
     setActionError(null)
     try {
@@ -116,7 +111,8 @@ export default function AdminKycReviewModal({ submission, userDisplayName, histo
   }
 
   return (
-    <Modal open onClose={onClose} title="Review KYC Submission" widthClassName="max-w-2xl">
+    <>
+    <Modal open={!approveConfirmOpen} onClose={onClose} title="Review KYC Submission" widthClassName="max-w-2xl">
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface-alt px-3 py-2.5">
           <div>
@@ -219,7 +215,7 @@ export default function AdminKycReviewModal({ submission, userDisplayName, histo
               <Button variant="danger" onClick={() => setRejecting(true)} disabled={processing}>
                 Reject
               </Button>
-              <Button className="flex-1" onClick={handleApprove} disabled={processing}>
+              <Button className="flex-1" onClick={() => setApproveConfirmOpen(true)} disabled={processing}>
                 {processing ? 'Approving…' : 'Approve / Verify'}
               </Button>
             </div>
@@ -238,5 +234,15 @@ export default function AdminKycReviewModal({ submission, userDisplayName, histo
         )}
       </div>
     </Modal>
+    <ConfirmDialog
+      open={approveConfirmOpen}
+      onClose={() => setApproveConfirmOpen(false)}
+      title="Approve identity verification?"
+      description={`Approve identity verification for ${submission.userEmail}? This marks their account as Verified.`}
+      confirmLabel="Approve / Verify"
+      loadingLabel="Approving…"
+      onConfirm={handleApprove}
+    />
+    </>
   )
 }
