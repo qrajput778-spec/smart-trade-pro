@@ -6,7 +6,7 @@ import HeroTerminal from '../components/HeroTerminal'
 import MarketCard from '../components/MarketCard'
 import PriceTicker from '../components/PriceTicker'
 import { useMarketData } from '../context/MarketDataContext'
-import { STARTING_VIRTUAL_BALANCE, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
+import { TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
 
 const FEATURES = [
   {
@@ -41,7 +41,7 @@ export default function Landing() {
     { label: 'Simulation uptime', value: '24/7' },
     {
       label: 'Starting virtual balance',
-      value: formatUsd(STARTING_VIRTUAL_BALANCE, { maximumFractionDigits: 0 }),
+      value: formatUsd(0, { maximumFractionDigits: 0 }),
     },
     { label: 'Rated by students', value: '4.8 / 5' },
   ]
@@ -122,9 +122,8 @@ export default function Landing() {
             Ready to practice risk-free?
           </h2>
           <p className="mx-auto mt-3 max-w-lg text-text-muted">
-            Create a free account and start trading with{' '}
-            {formatUsd(STARTING_VIRTUAL_BALANCE, { maximumFractionDigits: 0 })} in virtual
-            funds. No card, no wallet, no real money — ever.
+            Create a free account and fund your simulated wallet with a quick deposit
+            request. No card, no wallet, no real money — ever.
           </p>
           <div className="mt-6 flex justify-center">
             <Link to="/signup">

@@ -1,6 +1,14 @@
 // Shared display constants for SMART TRADE PRO.
 
-/** Starting virtual balance every new simulated account is seeded with. */
+/**
+ * NOT used for new-account signup — every new account starts at a real
+ * balance of 0 (see Signup.tsx), with no automatic starting/demo funds.
+ * This constant is only the fixed amount the existing, explicitly
+ * user-triggered "Reset Portfolio" feature (src/lib/trading.ts's
+ * resetPortfolio, launched from Settings.tsx/Dashboard.tsx) restores a
+ * balance to — kept as its own named constant rather than a bare literal
+ * so that one meaning is documented in one place.
+ */
 export const STARTING_VIRTUAL_BALANCE = 10_000
 
 /** Fixed top-up amount for the Dashboard's "Add Virtual Funds" quick action. */

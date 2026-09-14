@@ -4,7 +4,7 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
 import { getAuthErrorMessage } from '../lib/authErrors'
-import { STARTING_VIRTUAL_BALANCE, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
+import { TRACKED_SYMBOLS } from '../lib/constants'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import TextField from '../components/TextField'
@@ -62,10 +62,25 @@ export default function Signup() {
       // isAdmin is deliberately never written here (or anywhere client-side)
       // — it's absent by default and only ever flipped by hand in the
       // Firestore console for a specific account.
+      //
+      // balance starts at exactly 0 — no automatic starting/demo funds are
+      // granted on signup. The only way to add real virtual balance is the
+      // existing admin-approved deposit workflow (src/lib/balanceRequests.ts,
+      // Wallet.tsx's Deposit button). totalRealizedPnl/pendingWithdrawalTotal/
+      // shorts are deliberately left unset here, exactly as before — every
+      // read site already treats a missing field as 0/empty, not as a
+      // fallback demo amount, so there's nothing to add for those.
+      //
+      // This whole setDoc is a single atomic Firestore write to a
+      // freshly-minted, guaranteed-unique uid (Firebase Auth just issued it
+      // in the createUserWithEmailAndPassword call above), and the submit
+      // button above is already disabled while `submitting` is true — so
+      // there's no path for two concurrent writes to ever race on the same
+      // new user's initial balance.
       await setDoc(doc(db, 'users', credential.user.uid), {
         displayName: trimmedName,
         email,
-        balance: STARTING_VIRTUAL_BALANCE,
+        balance: 0,
         holdings: {},
         // Starts with every tracked symbol starred — same default a
         // pre-existing account without this field gets at read time
@@ -87,8 +102,8 @@ export default function Signup() {
       <Card className="w-full max-w-md">
         <h1 className="text-2xl font-semibold text-text-primary">Create your account</h1>
         <p className="mt-1 text-sm text-text-muted">
-          Start practicing with {formatUsd(STARTING_VIRTUAL_BALANCE, { maximumFractionDigits: 0 })}{' '}
-          in virtual funds. No card, no wallet, no real money.
+          Every account starts at $0 — request a virtual deposit once you're in to start
+          practicing. No card, no real money.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
