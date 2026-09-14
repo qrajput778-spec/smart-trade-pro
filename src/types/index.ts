@@ -200,20 +200,33 @@ export interface TimedTradeDoc {
   openedAt: unknown
   scheduledCloseAt: unknown
   status: TimedTradeStatus
-  // Present only once status is CLOSED. This is a fixed-payout (binary
-  // options style) contract, not a real-price-scaled one: `result` is
-  // WIN/LOSS decided by price direction only (which way the market moved
-  // relative to entry, LONG/SHORT-aware — or the forced outcome under
-  // FORCE_WIN/FORCE_LOSS), and the payout is always the full
-  // `investedAmount` either way — never a fraction of it. `realizedPnl` is
-  // therefore always exactly +investedAmount (WIN) or -investedAmount
-  // (LOSS), and `returnAmount` is always exactly 2x invested (WIN) or 0
-  // (LOSS) — see src/lib/timedTrading.ts's settleTimedTradeIfDue.
+  // Present only once status is CLOSED. `result` is WIN/LOSS decided by
+  // price direction only (which way the market moved relative to entry,
+  // LONG/SHORT-aware — or the forced outcome under FORCE_WIN/FORCE_LOSS);
+  // the payout magnitude then differs by outcome:
+  //   - WIN:  a tiered profit percentage of investedAmount (see
+  //     getProfitRateByInvestment/calculateTieredProfit in
+  //     src/lib/trading.ts) — NOT a flat 100%. `profitRate`/
+  //     `profitPercentage`/`profitAmount` record exactly what was applied;
+  //     `realizedPnl` == `profitAmount` and `returnAmount` ==
+  //     investedAmount + profitAmount.
+  //   - LOSS: unchanged — the full `investedAmount` is forfeited outright.
+  //     `realizedPnl` == -investedAmount, `returnAmount` == 0, and
+  //     `profitRate`/`profitPercentage`/`profitAmount` are never set (a
+  //     loss never earns a profit rate).
+  // See src/lib/timedTrading.ts's settleTimedTradeIfDue for exactly how
+  // these are computed.
   exitPrice?: number
   closedAt?: unknown
   result?: 'WIN' | 'LOSS'
   realizedPnl?: number
   returnAmount?: number
+  /** WIN only — the tier rate actually applied, e.g. 0.07 for 7%. Absent on a LOSS. */
+  profitRate?: number
+  /** WIN only — profitRate expressed as a whole-number percentage, e.g. 7. Absent on a LOSS. */
+  profitPercentage?: number
+  /** WIN only — investedAmount * profitRate, rounded to cents. Absent on a LOSS. */
+  profitAmount?: number
   // Set only when settlement happened while the global Trade Outcome
   // Control mode (systemSettings/tradeOutcomeControl) was FORCE_WIN/
   // FORCE_LOSS — same convention as TransactionDoc's admin-audit fields.
@@ -244,15 +257,55 @@ export interface SupportChatThreadDoc {
   uid: string
   lastMessage: string
   lastMessageAt: unknown
-  lastSenderRole: 'user' | 'admin'
+  lastSenderRole: 'user' | 'admin' | 'system'
+  /**
+   * Set to true the moment the one-time automatic support acknowledgment
+   * (src/lib/supportChat.ts's sendSupportMessage/sendSupportAutoReplyIfNeeded)
+   * has been sent for this thread — permanent, never unset once true.
+   * Absent on every thread that predates this feature; those are never
+   * retroactively sent one (a thread that already existed before a user's
+   * next message is never treated as "new", regardless of this field).
+   */
+  autoReplySent?: boolean
 }
 
-/** One message at users/{uid}/supportChat/thread/messages/{id}. Written by a real person only. */
+/**
+ * One message at users/{uid}/supportChat/thread/messages/{id}. `senderRole`
+ * is 'user' or 'admin' for every message an actual person wrote, and
+ * 'system' for exactly one message per thread: the automatic first-contact
+ * acknowledgment (see src/lib/supportChat.ts) — never a bot reply to
+ * anything else, and never written by a real sender id.
+ *
+ * `type`/`imageName`/`imageSize`/`imageContentType` plus exactly one of
+ * `imagePath`/`imageUrl` are present ONLY on a message that includes an
+ * uploaded image attachment — absent on every text-only or system message,
+ * which keeps the exact prior schema for those untouched. `text` may be an
+ * empty string on an image-only message (no caption); it is never absent.
+ */
 export interface SupportChatMessageDoc {
   senderId: string
-  senderRole: 'user' | 'admin'
+  senderRole: 'user' | 'admin' | 'system'
   text: string
   timestamp: unknown
+  /** Set only when this message carries an image (src/lib/supportChat.ts's sendSupportMessage). */
+  type?: 'image'
+  /**
+   * Supabase Storage path at support-attachments/support/{uid}/{messageId}/{filename}
+   * — the current field for any image message. A signed viewing URL is
+   * fetched fresh on demand (src/lib/supportChat.ts's getSupportChatImageUrl),
+   * never persisted, since a private bucket's URL would just expire anyway.
+   */
+  imagePath?: string
+  /**
+   * LEGACY ONLY — a persisted Firebase Storage download URL, from before
+   * the migration to Supabase Storage. No code writes this field anymore;
+   * it's kept purely so any old message that has one still displays
+   * correctly (see SupportChatThread.tsx) rather than showing broken.
+   */
+  imageUrl?: string
+  imageName?: string
+  imageSize?: number
+  imageContentType?: string
 }
 
 export type KycDocumentType = 'idCard' | 'drivingLicense' | 'passport' | 'photo'

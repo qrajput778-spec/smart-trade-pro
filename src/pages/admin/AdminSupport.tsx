@@ -11,7 +11,7 @@ interface ThreadSummary {
   uid: string
   lastMessage: string
   lastMessageAt: Date | null
-  lastSenderRole: 'user' | 'admin'
+  lastSenderRole: 'user' | 'admin' | 'system'
 }
 
 interface UserInfo {
@@ -76,7 +76,8 @@ export default function AdminSupport() {
               lastMessage: String(data.lastMessage ?? ''),
               lastMessageAt:
                 lastMessageAt && typeof lastMessageAt.toDate === 'function' ? lastMessageAt.toDate() : null,
-              lastSenderRole: data.lastSenderRole === 'admin' ? 'admin' : 'user',
+              lastSenderRole:
+                data.lastSenderRole === 'admin' ? 'admin' : data.lastSenderRole === 'system' ? 'system' : 'user',
             }
           }),
         )

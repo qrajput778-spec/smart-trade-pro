@@ -15,11 +15,13 @@ This is a university course project: a SIMULATED crypto trading dashboard.
   identity verification. Nothing it collects is checked against a real
   identity, government database, or KYC provider — an admin just eyeballs
   whatever was uploaded and clicks Approve/Reject. IMPORTANT: because the
-  uploads still go to a real Firebase Storage bucket, treat this exactly
-  like any other file-upload feature from a data-handling standpoint —
-  never upload a real government ID/passport/driving license to it, even
-  for testing. Use placeholder/dummy images only. See src/pages/Kyc.tsx's
-  own on-page copy, which tells users the same thing.
+  uploads still go to a real private storage bucket (Supabase Storage —
+  see SUPABASE_STORAGE_SETUP.md; Firebase Storage was abandoned due to
+  Google Cloud billing activation failures), treat this exactly like any
+  other file-upload feature from a data-handling standpoint — never upload
+  a real government ID/passport/driving license to it, even for testing.
+  Use placeholder/dummy images only. See src/pages/Kyc.tsx's own on-page
+  copy, which tells users the same thing.
 - Any "support chat" feature must clearly disclose it is automated, never
   impersonate a human agent — unless it's explicitly built as a genuine
   human admin↔user chat instead (src/lib/supportChat.ts is the latter: a

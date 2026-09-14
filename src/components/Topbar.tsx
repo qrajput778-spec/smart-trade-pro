@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { Bell, LogOut, Moon, Search, ShieldCheck, Sun } from 'lucide-react'
+import { Bell, LogOut, Menu, Moon, Search, ShieldCheck, Sun } from 'lucide-react'
 import PriceTicker from './PriceTicker'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
@@ -9,7 +9,12 @@ import { useTheme } from '../context/ThemeContext'
 import { useIsAdmin } from '../hooks/useIsAdmin'
 import { auth } from '../lib/firebase'
 
-export default function Topbar() {
+interface TopbarProps {
+  /** Opens the mobile Sidebar drawer (see Layout.tsx) — the button below is only ever shown under the lg breakpoint. */
+  onOpenSidebar: () => void
+}
+
+export default function Topbar({ onOpenSidebar }: TopbarProps) {
   const { user } = useAuth()
   const { prices, loading } = useMarketData()
   const { theme, toggleTheme } = useTheme()
@@ -42,8 +47,20 @@ export default function Topbar() {
     <div className="sticky top-0 z-10 flex flex-col bg-background">
       <PriceTicker prices={prices} loading={loading} />
 
-      <div className="flex items-center gap-4 border-b border-border bg-surface px-6 py-3">
-        <div className="flex w-full max-w-md items-center gap-2 rounded-md border border-border bg-surface-alt px-3 py-2 text-sm text-text-muted">
+      <div className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3 sm:gap-4 sm:px-6">
+        <button
+          type="button"
+          onClick={onOpenSidebar}
+          className="flex-none rounded-md p-2 text-text-muted transition-colors hover:text-text-primary lg:hidden"
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
+
+        {/* Purely decorative (no search is wired up yet) — hidden below sm
+            rather than squeezed, so the hamburger/icons/avatar always stay
+            fully visible and reachable on a narrow phone. */}
+        <div className="hidden w-full max-w-md items-center gap-2 rounded-md border border-border bg-surface-alt px-3 py-2 text-sm text-text-muted sm:flex">
           <Search size={16} className="flex-none" />
           <span className="flex-1 truncate">Search crypto markets, coins, pairs...</span>
           <kbd className="flex-none rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-text-muted">

@@ -139,16 +139,16 @@ export default function Wallet() {
             </p>
           </div>
 
-          <div className="flex flex-none gap-3">
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
             <Button
-              className="flex items-center gap-2 px-5"
+              className="flex w-full items-center justify-center gap-2 px-5 sm:w-auto"
               onClick={() => setDepositOpen(true)}
             >
               <ArrowDownToLine size={16} /> Deposit
             </Button>
             <Button
               variant="secondary"
-              className="flex items-center gap-2 px-5"
+              className="flex w-full items-center justify-center gap-2 px-5 sm:w-auto"
               onClick={() => setWithdrawOpen(true)}
             >
               <ArrowUpFromLine size={16} /> Withdraw

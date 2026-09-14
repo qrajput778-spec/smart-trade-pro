@@ -23,32 +23,32 @@ export default function Navbar() {
   const displayLabel = user?.displayName || user?.email?.split('@')[0] || 'Account'
 
   return (
-    <nav className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
+    <nav className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-4 sm:px-6">
       <Link to="/" className="text-lg font-semibold text-text-primary">
         SMART TRADE <span className="text-accent-gold">PRO</span>
       </Link>
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         {loading ? null : user ? (
           <>
             <NavLink to="/dashboard" className={navLinkClasses}>
-              <LayoutDashboard size={16} /> Dashboard
+              <LayoutDashboard size={16} /> <span className="hidden sm:inline">Dashboard</span>
             </NavLink>
             <NavLink to="/markets" className={navLinkClasses}>
-              <LineChart size={16} /> Markets
+              <LineChart size={16} /> <span className="hidden sm:inline">Markets</span>
             </NavLink>
             <NavLink to="/portfolio" className={navLinkClasses}>
-              <Wallet size={16} /> Portfolio
+              <Wallet size={16} /> <span className="hidden sm:inline">Portfolio</span>
             </NavLink>
             <NavLink to="/settings" className={navLinkClasses}>
-              <Settings size={16} /> Settings
+              <Settings size={16} /> <span className="hidden sm:inline">Settings</span>
             </NavLink>
-            <div className="ml-3 flex items-center gap-3 border-l border-border pl-3">
-              <span className="text-sm text-text-muted">{displayLabel}</span>
+            <div className="ml-1 flex items-center gap-2 border-l border-border pl-2 sm:ml-3 sm:gap-3 sm:pl-3">
+              <span className="hidden text-sm text-text-muted md:inline">{displayLabel}</span>
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-text-muted transition-colors hover:text-danger"
               >
-                <LogOut size={16} /> Log out
+                <LogOut size={16} /> <span className="hidden sm:inline">Log out</span>
               </button>
             </div>
           </>

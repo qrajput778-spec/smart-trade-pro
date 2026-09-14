@@ -22,8 +22,25 @@ rules_version = '2';
 //                                           tool / deposit-withdrawal
 //                                           approval (admin, `balance` and
 //                                           `pendingWithdrawalTotal` only),
-//                                           and deleted during account
-//                                           deletion (owner). NOTE: the
+//                                           and deleted either during the
+//                                           owner's own account deletion
+//                                           (Settings, src/lib/account.ts)
+//                                           or by an admin's "Remove User"
+//                                           tool (AdminUserDetail's Danger
+//                                           Zone, src/lib/admin.ts's
+//                                           removeUserAccount) — the latter
+//                                           can never target another admin
+//                                           account. Either path also wipes
+//                                           this uid's transactions,
+//                                           portfolioSnapshots, timedTrades,
+//                                           and supportChat subcollections
+//                                           (see each below); it does NOT
+//                                           and CANNOT delete the target's
+//                                           Firebase Authentication
+//                                           credentials — that requires the
+//                                           Admin SDK on a trusted server,
+//                                           which this project has no
+//                                           backend for. NOTE: the
 //                                           admin's global Trade Outcome
 //                                           Control mode (systemSettings/
 //                                           tradeOutcomeControl, below)
@@ -87,8 +104,10 @@ rules_version = '2';
 //                                           and by an admin across all
 //                                           accounts (AdminDashboard/
 //                                           AdminTrades, collectionGroup).
-//                                           Bulk-deleted only during the
-//                                           owner's own account deletion.
+//                                           Bulk-deleted during the owner's
+//                                           own account deletion, or by an
+//                                           admin's "Remove User" tool
+//                                           (never against another admin).
 //   users/{uid}/timedTrades/{id}          — one timed/binary-style contract
 //                                           (src/lib/timedTrading.ts) — a
 //                                           DIFFERENT product from the
@@ -118,13 +137,31 @@ rules_version = '2';
 //                                           transactions/ above (tagged
 //                                           tradeMode: 'TIMED'), so existing
 //                                           admin/history views show timed
-//                                           trades with no changes needed.
+//                                           trades with no changes needed. A
+//                                           WIN's profit is a tiered
+//                                           percentage of investedAmount
+//                                           (src/lib/trading.ts's
+//                                           getProfitRateByInvestment/
+//                                           calculateTieredProfit) — 5% to
+//                                           13% depending on the amount
+//                                           invested, NOT a flat 100% — and
+//                                           settlement additionally stamps
+//                                           `profitRate`/`profitPercentage`/
+//                                           `profitAmount` (WIN only; absent
+//                                           on a LOSS, which still simply
+//                                           forfeits the full
+//                                           `investedAmount`, unaffected by
+//                                           the tier table).
 //                                           Read by owner or admin.
+//                                           Bulk-deleted during the owner's
+//                                           own account deletion, or by an
+//                                           admin's "Remove User" tool.
 //   users/{uid}/portfolioSnapshots/{id}  — same lifecycle as transactions:
 //                                           owner-created once per trade,
 //                                           read by owner or admin, deleted
-//                                           only on the owner's own account
-//                                           deletion. Never updated.
+//                                           on the owner's own account
+//                                           deletion or by an admin's
+//                                           "Remove User" tool. Never updated.
 //   users/{uid}/supportChat/thread       — fixed-id doc (one thread per
 //                                           user) holding denormalized
 //                                           lastMessage/lastMessageAt/
@@ -134,10 +171,27 @@ rules_version = '2';
 //                                           messages) or by an admin
 //                                           (replies, and the 7-day
 //                                           stale-thread cleanup sweep).
-//   .../supportChat/thread/messages/{id} — one real chat message. Read live
-//                                           via onSnapshot by Support.tsx
-//                                           (the owner) and
-//                                           AdminSupport.tsx (any admin).
+//                                           `autoReplySent` (bool, absent on
+//                                           every thread older than this
+//                                           field) is written, still by the
+//                                           owner, the one time a brand-new
+//                                           thread's first message triggers
+//                                           the automatic acknowledgment —
+//                                           see sendSupportAutoReplyIfNeeded
+//                                           there; no rule change was needed
+//                                           for it, the owner already had
+//                                           unrestricted write access here.
+//   .../supportChat/thread/messages/{id} — one real chat message, PLUS
+//                                           exactly one automatic message
+//                                           per thread (senderRole
+//                                           'system', written by the owner
+//                                           as part of the transaction
+//                                           above — never by an admin, and
+//                                           never more than once per
+//                                           thread). Read live via
+//                                           onSnapshot by Support.tsx (the
+//                                           owner) and AdminSupport.tsx (any
+//                                           admin).
 //   balanceRequests/{id}                 — top-level collection (NOT nested
 //                                           under users/{uid}, so an admin's
 //                                           "every request across every
@@ -194,13 +248,14 @@ rules_version = '2';
 //                                           admin can ever move a
 //                                           submission off 'pending', and
 //                                           only that exact transition.
-//                                           The actual files live in
-//                                           Storage at
-//                                           kyc/{uid}/{submissionId}/{docType}
-//                                           (storage.rules) — Firestore
-//                                           only stores each file's path,
-//                                           never a download URL (see
-//                                           KycDocumentInfo in
+//                                           The actual files live in a
+//                                           private Supabase Storage bucket
+//                                           (kyc-documents) at
+//                                           kyc/{uid}/{submissionId}/{docType}.{ext}
+//                                           — see SUPABASE_STORAGE_SETUP.md.
+//                                           Firestore only stores each
+//                                           file's path, never a download
+//                                           URL (see KycDocumentInfo in
 //                                           src/types/index.ts) and never
 //                                           the file itself.
 //   systemSettings/tradeOutcomeControl    — a SINGLETON document (one doc
@@ -267,6 +322,25 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
+    // True when the given uid's OWN doc has isAdmin == true — used only to
+    // stop one admin from removing another admin's account via the "Remove
+    // User" tool (src/lib/admin.ts's removeUserAccount). Distinct from
+    // isAdmin() above, which always checks the CALLER's own doc; this
+    // checks an arbitrary target uid instead.
+    //
+    // Uses map.get(key, default) rather than direct `.data.isAdmin` access:
+    // a normal (non-admin) account's doc never sets `isAdmin` at all — it's
+    // not just false, the field is fully ABSENT — and Firestore Rules
+    // treats reading a genuinely missing map key via dot-access as an
+    // evaluation error, which silently denies the whole rule rather than
+    // throwing something visible. .get() with a default sidesteps that
+    // entirely. (This bit an actual "Remove User" attempt against a real
+    // signed-up, non-admin account — every account this was tested against
+    // before that had `isAdmin` explicitly set one way or the other.)
+    function isAdminAccount(targetUid) {
+      return get(/databases/$(database)/documents/users/$(targetUid)).data.get('isAdmin', false) == true;
+    }
+
     // Rules-side backstop for the admin's global Trade Outcome Control mode
     // (systemSettings/tradeOutcomeControl below): a client CREATING a
     // closing transaction record (one that carries `realizedPnl` — see the
@@ -304,7 +378,15 @@ service cloud.firestore {
       // account-deletion's final deleteDoc.
       // Admin: read access for AdminUsers/AdminUserDetail.
       allow read: if isOwner(uid) || isAdmin();
-      allow create, delete: if isOwner(uid);
+      allow create: if isOwner(uid);
+      // Owner: their own Settings > Delete Account flow (src/lib/account.ts).
+      // Admin: the "Remove User" tool (src/lib/admin.ts's removeUserAccount),
+      // AdminUsers' inline Remove action — but never against another admin
+      // account, so one admin can't remove another this way. Uses
+      // .get('isAdmin', false) rather than direct `.data.isAdmin` access —
+      // see isAdminAccount() above for why a normal account (where the
+      // field is entirely absent, not just false) needs that.
+      allow delete: if isOwner(uid) || (isAdmin() && resource.data.get('isAdmin', false) != true);
 
       // Owner covers all of the app's own balance/holdings/shorts/profile
       // writes, including reserving/releasing their own
@@ -346,9 +428,10 @@ service cloud.firestore {
         // Immutable forever once created — no update path exists for
         // anyone, admins included.
         allow update: if false;
-        // Only reached by the account-deletion cleanup flow (owner only —
-        // admins never delete a user's trade history).
-        allow delete: if isOwner(uid);
+        // Reached by the owner's own account-deletion cleanup flow, and by
+        // an admin's "Remove User" cleanup (src/lib/admin.ts's
+        // removeUserAccount) — never against another admin's account.
+        allow delete: if isOwner(uid) || (isAdmin() && !isAdminAccount(uid));
       }
 
       // Timed/binary-style contracts (src/lib/timedTrading.ts) — a
@@ -394,17 +477,22 @@ service cloud.firestore {
           request.resource.data.status == 'CLOSED' &&
           request.time >= timedTradeDeadline(resource.data) &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'exitPrice', 'closedAt', 'result', 'realizedPnl', 'returnAmount', 'adminControlled', 'adminAction', 'adminActionBy', 'forcedResult']);
+            .hasOnly(['status', 'exitPrice', 'closedAt', 'result', 'realizedPnl', 'returnAmount', 'profitRate', 'profitPercentage', 'profitAmount', 'adminControlled', 'adminAction', 'adminActionBy', 'forcedResult']);
 
-        // Only reached by the account-deletion cleanup flow.
-        allow delete: if isOwner(uid);
+        // Reached by the owner's own account-deletion cleanup flow, and by
+        // an admin's "Remove User" cleanup — never against another admin's
+        // account.
+        allow delete: if isOwner(uid) || (isAdmin() && !isAdminAccount(uid));
       }
 
       match /portfolioSnapshots/{snapshotId} {
         allow read: if isOwner(uid) || isAdmin();
         allow create: if isOwner(uid);
         allow update: if false;
-        allow delete: if isOwner(uid);
+        // Reached by the owner's own account-deletion cleanup flow, and by
+        // an admin's "Remove User" cleanup — never against another admin's
+        // account.
+        allow delete: if isOwner(uid) || (isAdmin() && !isAdminAccount(uid));
       }
 
       // Real user↔admin support chat (src/lib/supportChat.ts). A user can

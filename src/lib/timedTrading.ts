@@ -28,7 +28,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import { roundQty, roundUsd, resolveSettlementPrice, TradingError } from './trading'
+import { calculateTieredProfit, roundQty, roundUsd, resolveSettlementPrice, TradingError } from './trading'
 import type { PositionType, TimedTradeDoc, TimedTradeDuration } from '../types'
 
 function requireDb() {
@@ -88,6 +88,9 @@ function parseTimedTrade(id: string, data: Record<string, unknown>): TimedTrade 
     result: data.result === 'WIN' || data.result === 'LOSS' ? data.result : undefined,
     realizedPnl: typeof data.realizedPnl === 'number' ? data.realizedPnl : undefined,
     returnAmount: typeof data.returnAmount === 'number' ? data.returnAmount : undefined,
+    profitRate: typeof data.profitRate === 'number' ? data.profitRate : undefined,
+    profitPercentage: typeof data.profitPercentage === 'number' ? data.profitPercentage : undefined,
+    profitAmount: typeof data.profitAmount === 'number' ? data.profitAmount : undefined,
     adminControlled: data.adminControlled === true,
     adminAction: (data.adminAction as TimedTrade['adminAction']) ?? null,
     adminActionBy: typeof data.adminActionBy === 'string' ? data.adminActionBy : null,
@@ -221,12 +224,19 @@ export type SettleOutcome = 'settled' | 'not_due' | 'already_settled'
  * trade's own server-resolved `openedAt` + duration, so even a client that
  * ignores the schedule entirely can't force an early settlement.
  *
- * This is a fixed-payout (binary options style) contract: the exit price
- * (from resolveSettlementPrice — the real live price in NORMAL mode, or a
- * guaranteed-direction price under FORCE_WIN/FORCE_LOSS) only decides WIN
- * vs LOSS by which way it moved relative to entry; the payout itself is
- * always the full `investedAmount`, never a fraction scaled by how far the
- * price actually moved. See the TimedTradeDoc comment in src/types/index.ts.
+ * The exit price (from resolveSettlementPrice — the real live price in
+ * NORMAL mode, or a guaranteed-direction price under FORCE_WIN/FORCE_LOSS)
+ * only decides WIN vs LOSS by which way it moved relative to entry, never
+ * how big the payout is — this is not a real-price-scaled product. From
+ * there:
+ *   - WIN:  profit is `investedAmount * getProfitRateByInvestment(investedAmount)`
+ *     (see src/lib/trading.ts's calculateTieredProfit) — a tiered
+ *     percentage of the stake, NOT a flat 100%. The stake is always
+ *     returned in full on top of that profit.
+ *   - LOSS: the full `investedAmount` is forfeited, exactly as before this
+ *     tiered-profit feature existed — completely unaffected by the tier
+ *     table, which only ever applies to a WIN's profit.
+ * See the TimedTradeDoc comment in src/types/index.ts.
  */
 export async function settleTimedTradeIfDue(
   uid: string,
@@ -279,14 +289,16 @@ export async function settleTimedTradeIfDue(
     const won = directionalMove >= 0
     const result: 'WIN' | 'LOSS' = won ? 'WIN' : 'LOSS'
 
-    // Fixed payout: win the full invested amount, lose the full invested
-    // amount — never a fraction scaled by the (possibly tiny) price move.
-    // The reservation taken at open is released here either way: on a win
-    // it comes back doubled (the stake plus an equal profit); on a loss it
-    // simply isn't returned. Balance can never go negative from this,
-    // since `investedAmount` was already fully deducted up front at open.
-    const pnl = roundUsd(won ? investedAmount : -investedAmount)
-    const returnAmount = roundUsd(won ? investedAmount * 2 : 0)
+    // WIN: the stake is returned in full, plus a tiered profit percentage
+    // of investedAmount (never a flat 100%, never scaled by how far price
+    // actually moved). LOSS: completely unaffected by the tier table — the
+    // full invested amount is simply forfeited, exactly as before. Either
+    // way, the reservation taken at open is what's being released here;
+    // balance can never go negative from this, since `investedAmount` was
+    // already fully deducted up front at open.
+    const tiered = won ? calculateTieredProfit(investedAmount) : null
+    const pnl = roundUsd(won ? tiered!.profitAmount : -investedAmount)
+    const returnAmount = roundUsd(won ? investedAmount + tiered!.profitAmount : 0)
 
     transaction.update(userRef, {
       balance: roundUsd(balance + returnAmount),
@@ -300,6 +312,11 @@ export async function settleTimedTradeIfDue(
       result,
       realizedPnl: pnl,
       returnAmount,
+      ...(tiered && {
+        profitRate: tiered.profitRate,
+        profitPercentage: tiered.profitPercentage,
+        profitAmount: tiered.profitAmount,
+      }),
       ...(override && {
         adminControlled: override.adminControlled,
         adminAction: override.adminAction,

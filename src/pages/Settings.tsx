@@ -325,7 +325,7 @@ export default function Settings() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-danger">Danger Zone</h2>
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-4 border-b border-border pb-4">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
             <div>
               <p className="text-sm font-medium text-text-primary">Reset Portfolio</p>
               <p className="mt-1 text-xs text-text-muted">
@@ -338,7 +338,7 @@ export default function Settings() {
           </div>
           {resetError && <p className="mt-2 text-xs text-danger">{resetError}</p>}
 
-          <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-text-primary">Delete Account</p>
               <p className="mt-1 text-xs text-text-muted">

@@ -25,20 +25,27 @@ interface TimedTradeResultModalProps {
  * owner-scoped subscription — so there's no cross-user leakage to guard
  * against here.
  *
- * Fixed-payout accounting: `trade.result`/`realizedPnl`/`returnAmount` are
- * already exactly WIN/+investedAmount/2x-invested or LOSS/-investedAmount/0
- * — see src/lib/timedTrading.ts's settleTimedTradeIfDue — so this component
- * only ever displays those stored values, never recomputes a P&L amount
- * itself. The `?? investedAmount` fallbacks below only guard against a
- * theoretical malformed/legacy document, not a different accounting path.
+ * Tiered-profit accounting: on a WIN, `trade.realizedPnl` is
+ * investedAmount * a tiered profitRate (5%–13% depending on the amount
+ * invested — see src/lib/trading.ts's calculateTieredProfit), NOT a flat
+ * 100%; on a LOSS, the full `investedAmount` is simply forfeited, exactly
+ * as before this feature existed. Either way this component only ever
+ * displays the stored settlement values (`realizedPnl`/`returnAmount`/
+ * `profitRate`/`profitPercentage`), never recomputes them itself — see
+ * src/lib/timedTrading.ts's settleTimedTradeIfDue. The `??` fallbacks below
+ * only guard against a theoretical malformed/legacy document, not a
+ * different accounting path.
  */
 export default function TimedTradeResultModal({ trade, onClose, onTradeAgain }: TimedTradeResultModalProps) {
   if (!trade || trade.status !== 'CLOSED') return null
 
   const won = trade.result ? trade.result === 'WIN' : (trade.realizedPnl ?? 0) >= 0
   const pnl = trade.realizedPnl ?? (won ? trade.investedAmount : -trade.investedAmount)
-  const pnlPct = won ? 100 : -100
-  const returnAmount = trade.returnAmount ?? (won ? trade.investedAmount * 2 : 0)
+  // A LOSS is always exactly -100% of what was invested; a WIN's percentage
+  // is whatever tier the invested amount fell into at settlement time — the
+  // stored `profitPercentage` — never a hardcoded 100%.
+  const pnlPct = won ? trade.profitPercentage ?? (trade.investedAmount > 0 ? (pnl / trade.investedAmount) * 100 : 0) : -100
+  const returnAmount = trade.returnAmount ?? (won ? trade.investedAmount + pnl : 0)
   const durationLabel = TIMED_TRADE_DURATIONS.find((option) => option.value === trade.duration)?.label ?? trade.duration
 
   return (
@@ -114,10 +121,18 @@ export default function TimedTradeResultModal({ trade, onClose, onTradeAgain }: 
           <p className="text-[10px] uppercase tracking-wide text-text-muted">Invested</p>
           <p className="mt-0.5 font-mono text-text-primary">{formatUsd(trade.investedAmount)}</p>
         </div>
+        {/* Only a WIN ever earns a profit rate — showing one on a loss would
+            wrongly imply profit was earned. */}
+        {won && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-text-muted">Profit Rate</p>
+            <p className="mt-0.5 font-mono text-success">{pnlPct}%</p>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-surface-alt px-3 py-2 text-xs">
-        <span className="text-text-muted">Return Amount</span>
+        <span className="text-text-muted">Total Return</span>
         <span className="font-mono font-semibold text-text-primary">{formatUsd(returnAmount)}</span>
       </div>
 

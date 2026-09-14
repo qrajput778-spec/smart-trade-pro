@@ -6,7 +6,20 @@
 // by AdminRoute and server-side by the isAdmin checks in firestore.rules
 // (deployed and live).
 
-import { collection, doc, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore'
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  writeBatch,
+  type CollectionReference,
+  type Firestore,
+} from 'firebase/firestore'
 import { db } from './firebase'
 import { roundUsd } from './trading'
 import type { TradeOutcomeMode } from '../types'
@@ -121,4 +134,103 @@ export async function setGlobalTradeOutcomeMode(
     updatedByEmail: adminEmail ?? null,
     updatedAt: serverTimestamp(),
   })
+}
+
+// ---------------------------------------------------------------------------
+// Remove User — AdminUserDetail's Danger Zone.
+// ---------------------------------------------------------------------------
+
+const USER_SUBCOLLECTIONS_TO_DELETE = ['transactions', 'portfolioSnapshots', 'timedTrades'] as const
+const DELETE_BATCH_SIZE = 500 // Firestore's per-batch write cap.
+
+export interface RemoveUserResult {
+  targetEmail: string
+}
+
+async function deleteCollectionInBatches(firestore: Firestore, collectionRef: CollectionReference) {
+  const snapshot = await getDocs(collectionRef)
+  for (let i = 0; i < snapshot.docs.length; i += DELETE_BATCH_SIZE) {
+    const batch = writeBatch(firestore)
+    snapshot.docs.slice(i, i + DELETE_BATCH_SIZE).forEach((docSnapshot) => batch.delete(docSnapshot.ref))
+    await batch.commit()
+  }
+}
+
+/**
+ * Permanently removes a user's Smart Trade Pro account: their profile doc,
+ * every document in its transactions/portfolioSnapshots/timedTrades
+ * subcollections, and their support chat thread — mirrors the owner's own
+ * Settings > Delete Account flow (src/lib/account.ts's deleteAccount),
+ * extended to also clean up the timedTrades and supportChat data that
+ * didn't exist yet when that one was written.
+ *
+ * Refuses to run against another admin account or the caller's own account
+ * (an admin removes themselves via Settings like everyone else, not here) —
+ * firestore.rules enforces the "never another admin" half of that
+ * server-side too, so this check is defense-in-depth, not the only guard.
+ *
+ * IMPORTANT LIMITATION: this can only ever delete Firestore data. There is
+ * no client-side way for one signed-in user — even an admin — to delete a
+ * DIFFERENT user's Firebase Authentication credentials; that requires the
+ * Admin SDK running on a trusted server (e.g. a Cloud Function), which this
+ * project has no backend for. If the removed person signs in again
+ * afterward, Firebase Auth will still accept their credentials, but the app
+ * will find no profile document for them and will not function — which is
+ * the accepted tradeoff here, short of also revoking the account by hand in
+ * the Firebase console.
+ */
+export async function removeUserAccount(
+  adminUid: string,
+  adminEmail: string | null,
+  targetUid: string,
+  reason: string,
+): Promise<RemoveUserResult> {
+  const firestore = requireDb()
+
+  const trimmedReason = reason.trim()
+  if (!trimmedReason) {
+    throw new AdminActionError('A reason is required for accountability.')
+  }
+  if (targetUid === adminUid) {
+    throw new AdminActionError('You cannot remove your own account from the admin panel — use Settings instead.')
+  }
+
+  const targetRef = doc(firestore, 'users', targetUid)
+  const targetSnapshot = await getDoc(targetRef)
+  if (!targetSnapshot.exists()) {
+    throw new AdminActionError('Target account not found — it may have already been removed.')
+  }
+  const targetData = targetSnapshot.data()
+  if (targetData.isAdmin === true) {
+    throw new AdminActionError('Another admin account cannot be removed from here.')
+  }
+  const targetEmail = typeof targetData.email === 'string' ? targetData.email : '—'
+
+  for (const subcollectionName of USER_SUBCOLLECTIONS_TO_DELETE) {
+    await deleteCollectionInBatches(firestore, collection(targetRef, subcollectionName))
+  }
+
+  // Support chat: the messages subcollection, then the fixed-id thread doc
+  // itself — most users never opened Support, so a missing thread is normal.
+  await deleteCollectionInBatches(firestore, collection(targetRef, 'supportChat', 'thread', 'messages'))
+  await deleteDoc(doc(targetRef, 'supportChat', 'thread')).catch(() => {
+    // No thread ever existed for this user.
+  })
+
+  await deleteDoc(targetRef)
+
+  // Logged last, only once the removal actually completed — see
+  // adjustUserBalance above for the same "adminUid must match the caller"
+  // rule this relies on (firestore.rules' adminActions/{actionId}).
+  await addDoc(collection(firestore, 'adminActions'), {
+    adminUid,
+    adminEmail: adminEmail ?? null,
+    targetUid,
+    targetEmail,
+    action: 'REMOVE_USER',
+    reason: trimmedReason,
+    timestamp: serverTimestamp(),
+  })
+
+  return { targetEmail }
 }

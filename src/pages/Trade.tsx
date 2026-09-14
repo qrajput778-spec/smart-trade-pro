@@ -11,7 +11,7 @@ import { useMarketData } from '../context/MarketDataContext'
 import { useTimedTrades } from '../context/TimedTradesContext'
 import { db } from '../lib/firebase'
 import { DEFAULT_TRADE_SYMBOL, formatUsd, isTrackedSymbol } from '../lib/constants'
-import { roundQty, roundUsd } from '../lib/trading'
+import { getProfitRateByInvestment, roundQty, roundUsd } from '../lib/trading'
 import { DEFAULT_TIMED_TRADE_DURATION, TIMED_TRADE_DURATIONS, openTimedTrade } from '../lib/timedTrading'
 import type { PositionType, TimedTradeDuration } from '../types'
 
@@ -329,18 +329,28 @@ export default function Trade() {
                   const isShort = trade.direction === 'SHORT'
                   const coinPrice = prices.find((p) => p.symbol === trade.symbol)?.price ?? 0
                   const priceIsKnown = coinPrice > 0
-                  // Fixed-payout preview: "if this settled right now" is
-                  // always won/lost for the FULL invested amount, never a
-                  // tiny market-price-scaled figure — see
+                  // "If this settled right now" preview: WIN/LOSS is decided
+                  // by price direction only, never how far it moved — see
                   // src/lib/timedTrading.ts's settleTimedTradeIfDue, which
-                  // this mirrors exactly (direction-aware sign only).
+                  // this mirrors exactly. The payout itself then mirrors
+                  // settlement too: a LOSS forfeits the full invested
+                  // amount, while a WIN's profit is the same tiered
+                  // percentage of investedAmount settlement would apply
+                  // (src/lib/trading.ts's calculateTieredProfit) — never a
+                  // flat 100%.
                   const directionalMove = priceIsKnown
                     ? isShort
                       ? trade.entryPrice - coinPrice
                       : coinPrice - trade.entryPrice
                     : null
                   const wouldWin = directionalMove !== null ? directionalMove >= 0 : null
-                  const previewPnl = wouldWin === null ? null : wouldWin ? trade.investedAmount : -trade.investedAmount
+                  const previewProfitRate = wouldWin ? getProfitRateByInvestment(trade.investedAmount) : null
+                  const previewPnl =
+                    wouldWin === null
+                      ? null
+                      : wouldWin
+                        ? roundUsd(trade.investedAmount * previewProfitRate!)
+                        : -trade.investedAmount
 
                   const remainingMs = trade.scheduledCloseAt ? trade.scheduledCloseAt.getTime() - now : 0
                   const settling = remainingMs <= 0
@@ -389,7 +399,7 @@ export default function Trade() {
                           <span className={`font-mono font-semibold ${previewPnl >= 0 ? 'text-success' : 'text-danger'}`}>
                             {previewPnl >= 0 ? '+' : ''}
                             {formatUsd(previewPnl)} ({previewPnl >= 0 ? '+' : ''}
-                            {previewPnl >= 0 ? 100 : -100}%)
+                            {previewPnl >= 0 ? roundUsd(previewProfitRate! * 100) : -100}%)
                           </span>
                         )}
                       </div>
@@ -414,6 +424,10 @@ export default function Trade() {
               <div className="mt-2 max-h-56 space-y-1 overflow-y-auto pr-0.5">
                 {closedTrades.slice(0, 25).map((trade) => {
                   const won = trade.result ? trade.result === 'WIN' : (trade.realizedPnl ?? 0) >= 0
+                  // Actual settled P&L (tiered profit on a WIN, full stake on a
+                  // LOSS) — never re-derived from investedAmount here, which
+                  // would silently drop back to the old flat-100% figure.
+                  const pnl = trade.realizedPnl ?? (won ? trade.investedAmount : -trade.investedAmount)
                   return (
                     <div key={trade.id} className="flex items-center justify-between rounded-md px-1.5 py-1.5 text-[11px] hover:bg-surface-alt">
                       <div>
@@ -427,8 +441,8 @@ export default function Trade() {
                       <div className="text-right">
                         <Badge tone={trade.direction === 'LONG' ? 'success' : 'danger'}>{trade.direction}</Badge>
                         <p className={`mt-0.5 font-mono font-semibold ${won ? 'text-success' : 'text-danger'}`}>
-                          {won ? '+' : '-'}
-                          {formatUsd(trade.investedAmount)}
+                          {pnl >= 0 ? '+' : ''}
+                          {formatUsd(pnl)}
                         </p>
                       </div>
                     </div>

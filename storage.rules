@@ -1,20 +1,49 @@
 rules_version = '2';
 
-// Firebase Storage security rules for SMART TRADE PRO.
+// ⚠️ VESTIGIAL — Firebase Storage was abandoned for SMART TRADE PRO because
+// Google Cloud billing activation for this project repeatedly failed
+// (OR_BACR2_31 / OR_BACR2_59). File storage now runs entirely on Supabase
+// Storage instead — see SUPABASE_STORAGE_SETUP.md and src/lib/supabase.ts.
+// No client code reads or writes Firebase Storage anymore (src/lib/kyc.ts
+// and src/lib/supportChat.ts both migrated), and this project's Firebase
+// Storage bucket was never actually provisioned in the first place, so
+// these rules were never live/enforced. Kept only so `firebase.json`'s
+// `storage.rules` reference doesn't dangle; safe to delete once you're
+// comfortable the migration is complete. The rules below describe the
+// ORIGINAL Firebase Storage design for historical context only.
 //
-// The only thing stored here is KYC verification document uploads
-// (src/lib/kyc.ts) — a SIMULATED identity-verification workflow for a
-// university course project. See README.md's top-of-file notice: nothing
-// uploaded here is checked against a real identity, and no one should
-// ever upload a real government ID document to it, even for testing —
-// but the files themselves are real uploads to a real bucket, so they're
-// still locked down exactly as if they mattered: only the uploading user
-// and admins can ever read them, and they are never public.
+// Firebase Storage security rules for SMART TRADE PRO (historical).
 //
-// Layout: kyc/{userId}/{submissionId}/{docType}
-//   docType is one of idCard | drivingLicense | passport | photo.
-// Firestore's kycSubmissions/{id} docs (firestore.rules) store each
-// file's path here, never a download URL and never the file itself.
+// Two things are stored here:
+//
+// 1. KYC verification document uploads (src/lib/kyc.ts) — a SIMULATED
+//    identity-verification workflow for a university course project. See
+//    README.md's top-of-file notice: nothing uploaded here is checked
+//    against a real identity, and no one should ever upload a real
+//    government ID document to it, even for testing — but the files
+//    themselves are real uploads to a real bucket, so they're still locked
+//    down exactly as if they mattered: only the uploading user and admins
+//    can ever read them, and they are never public.
+//
+//    Layout: kyc/{userId}/{submissionId}/{docType}
+//      docType is one of idCard | drivingLicense | passport | photo.
+//    Firestore's kycSubmissions/{id} docs (firestore.rules) store each
+//    file's path here, never a download URL and never the file itself.
+//
+// 2. Support chat image attachments (src/lib/supportChat.ts) — a real
+//    person's screenshot/photo shared in their support conversation.
+//    Layout: supportChatImages/{userId}/{messageId}
+//      userId is the CONVERSATION's owner (the customer), not necessarily
+//      the uploader — an admin replying with an image still uploads under
+//      the customer's own userId, matching how firestore.rules' supportChat
+//      match already treats "owner or admin" as the two parties on any one
+//      thread. messageId is the pre-generated Firestore message doc id, so
+//      each image's path is unique and traceable to exactly one message.
+//    Unlike KYC, the message doc itself stores the download URL directly
+//      (src/types/index.ts's SupportChatMessageDoc.imageUrl) rather than a
+//      bare path re-fetched on demand — a deliberate, lower-stakes choice
+//      for chat screenshots (not government ID scans): the URL is only ever
+//      handed to someone who already passed the same read gate below.
 
 service firebase.storage {
   match /b/{bucket}/o {
@@ -59,6 +88,25 @@ service firebase.storage {
       // Immutable once uploaded — a submission's files are never replaced
       // in place (resubmitting writes a new submissionId), so there's no
       // legitimate overwrite/delete path for anyone, admins included.
+      allow delete: if false;
+    }
+
+    match /supportChatImages/{userId}/{messageId} {
+      // Same two parties as the Firestore thread itself: the conversation's
+      // owner, or any admin (replying/reviewing from /admin/support).
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Either party may upload — a customer into their own conversation,
+      // or an admin replying into that same customer's conversation (still
+      // gated to a real image, under the size cap, exactly like KYC's
+      // image cap: a chat screenshot has no legitimate reason to exceed it).
+      allow write: if (isOwner(userId) || isAdmin()) &&
+        request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] &&
+        request.resource.size < 1 * 1024 * 1024;
+
+      // Immutable once uploaded — a message's image is never replaced in
+      // place (removing the selection before sending never uploads
+      // anything in the first place — see src/lib/supportChat.ts).
       allow delete: if false;
     }
 

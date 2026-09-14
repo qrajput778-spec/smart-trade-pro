@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, getDocs } from 'firebase/firestore'
-import { Search, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Search, ShieldCheck, UserX } from 'lucide-react'
 import Card from '../../components/Card'
+import Button from '../../components/Button'
+import TextField from '../../components/TextField'
 import PageContainer from '../../components/PageContainer'
+import { useAuth } from '../../context/AuthContext'
 import { useMarketData } from '../../context/MarketDataContext'
 import { db } from '../../lib/firebase'
 import { formatUsd } from '../../lib/constants'
 import { summarizeHoldings } from '../../lib/portfolioMath'
+import { removeUserAccount, AdminActionError } from '../../lib/admin'
 import type { HoldingsMap } from '../../types'
 
 interface AdminUserRow {
@@ -17,16 +21,56 @@ interface AdminUserRow {
   balance: number
   holdings: HoldingsMap
   createdAt: Date | null
+  isAdmin: boolean
 }
 
 export default function AdminUsers() {
   const navigate = useNavigate()
+  const { user: adminUser } = useAuth()
   const { prices } = useMarketData()
 
   const [rows, setRows] = useState<AdminUserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+
+  // ---- Remove user (inline, right from the list) ----
+  const [removeTarget, setRemoveTarget] = useState<AdminUserRow | null>(null)
+  const [removeReason, setRemoveReason] = useState('')
+  const [removeConfirmText, setRemoveConfirmText] = useState('')
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+
+  function openRemoveDialog(row: AdminUserRow, event: MouseEvent) {
+    event.stopPropagation() // don't also trigger the row's own "go to detail" click
+    setRemoveTarget(row)
+    setRemoveReason('')
+    setRemoveConfirmText('')
+    setRemoveError(null)
+  }
+
+  function closeRemoveDialog() {
+    setRemoveTarget(null)
+    setRemoveReason('')
+    setRemoveConfirmText('')
+    setRemoveError(null)
+  }
+
+  async function handleRemoveUser() {
+    if (!removeTarget || !adminUser || removeConfirmText !== 'REMOVE') return
+
+    setRemoveError(null)
+    setRemoving(true)
+    try {
+      await removeUserAccount(adminUser.uid, adminUser.email, removeTarget.uid, removeReason)
+      setRows((prev) => prev.filter((row) => row.uid !== removeTarget.uid))
+      closeRemoveDialog()
+    } catch (err) {
+      setRemoveError(err instanceof AdminActionError ? err.message : 'Could not remove this account — please try again.')
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   useEffect(() => {
     if (!db) {
@@ -52,6 +96,7 @@ export default function AdminUsers() {
               balance: typeof data.balance === 'number' ? data.balance : 0,
               holdings: (data.holdings as HoldingsMap | undefined) ?? {},
               createdAt: createdAt && typeof createdAt.toDate === 'function' ? createdAt.toDate() : null,
+              isAdmin: data.isAdmin === true,
             }
           }),
         )
@@ -117,18 +162,19 @@ export default function AdminUsers() {
               <th className="px-4 py-3 font-medium text-right">Cash Balance</th>
               <th className="px-4 py-3 font-medium text-right">Portfolio Value</th>
               <th className="px-4 py-3 font-medium">Joined</th>
+              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
+                <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
                   Loading users…
                 </td>
               </tr>
             ) : visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-text-muted">
+                <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
                   No users match "{query}".
                 </td>
               </tr>
@@ -156,6 +202,20 @@ export default function AdminUsers() {
                           })
                         : '—'}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      {row.isAdmin ? (
+                        <span className="text-[11px] text-text-muted">Admin</span>
+                      ) : row.uid === adminUser?.uid ? null : (
+                        <button
+                          type="button"
+                          onClick={(event) => openRemoveDialog(row, event)}
+                          className="inline-flex items-center gap-1 rounded-md border border-danger/30 px-2 py-1 text-[11px] font-medium text-danger transition-colors hover:bg-danger/10"
+                          title={`Remove ${row.displayName}`}
+                        >
+                          <UserX size={12} /> Remove
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 )
               })
@@ -163,6 +223,55 @@ export default function AdminUsers() {
           </tbody>
         </table>
       </Card>
+
+      {removeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <Card className="w-full max-w-md border-danger/40">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-danger" />
+              <h3 className="text-lg font-semibold text-text-primary">Remove {removeTarget.displayName}</h3>
+            </div>
+            <p className="mt-2 text-sm text-text-muted">
+              This permanently deletes {removeTarget.email}'s account, virtual balance, holdings,
+              and full trade/support history from Smart Trade Pro. This cannot be undone. It does
+              not revoke their Firebase sign-in credentials — that would need to be done separately
+              in the Firebase console.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <TextField
+                label="Reason (required)"
+                name="removeReason"
+                value={removeReason}
+                onChange={(event) => setRemoveReason(event.target.value)}
+                placeholder="e.g. Fraudulent test account, user requested deletion"
+              />
+              <TextField
+                label={'Type "REMOVE" to confirm'}
+                name="removeConfirm"
+                value={removeConfirmText}
+                onChange={(event) => setRemoveConfirmText(event.target.value)}
+                placeholder="REMOVE"
+              />
+            </div>
+
+            {removeError && <p className="mt-3 text-xs text-danger">{removeError}</p>}
+
+            <div className="mt-5 flex justify-end gap-3">
+              <Button variant="secondary" onClick={closeRemoveDialog} disabled={removing}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleRemoveUser}
+                disabled={removeConfirmText !== 'REMOVE' || !removeReason.trim() || removing}
+              >
+                {removing ? 'Removing…' : 'Permanently Remove User'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </PageContainer>
   )
 }

@@ -48,6 +48,55 @@ export function roundQty(value: number): number {
   return Math.round((value + Number.EPSILON) * factor) / factor
 }
 
+// ---------------------------------------------------------------------------
+// Tiered profit rate — timed trades only (src/lib/timedTrading.ts's
+// settleTimedTradeIfDue). A WINNING timed trade no longer returns a flat
+// +100% of investedAmount; instead the profit PERCENTAGE scales with how
+// much was invested, per this fixed table. LOSSES are completely untouched
+// by this — a losing trade still simply forfeits the full investedAmount,
+// exactly as before. This is the one place the tier table is defined; every
+// caller (settlement, the live pre-settlement preview in Trade.tsx, the
+// result popup) goes through these two functions rather than re-deriving it.
+// ---------------------------------------------------------------------------
+
+/**
+ * The profit rate for a given invested amount, per the fixed tier table.
+ * Boundaries are inclusive on the low end, exclusive on the high end (e.g.
+ * exactly $2,000 is already the 7% tier, not 5%) — checked with plain
+ * numeric comparisons, so there's no ambiguity at the exact boundary values.
+ */
+export function getProfitRateByInvestment(amount: number): number {
+  if (amount >= 50000) return 0.13
+  if (amount >= 25000) return 0.12
+  if (amount >= 14000) return 0.11
+  if (amount >= 7000) return 0.09
+  if (amount >= 2000) return 0.07
+  // Covers the documented $1–$2,000 tier (5%); a timed trade can never
+  // actually be opened for less than $1 (openTimedTrade requires
+  // investedAmount > 0 and the UI's minimum is $1), so this branch is also
+  // the safe fallback for that unreachable case.
+  return 0.05
+}
+
+export interface TieredProfit {
+  /** e.g. 0.07 for the 7% tier. */
+  profitRate: number
+  /** e.g. 7 for the 7% tier — the same rate, expressed as a whole-number percentage for display. */
+  profitPercentage: number
+  /** investedAmount * profitRate, rounded to cents. */
+  profitAmount: number
+}
+
+/** Profit rate + profit amount for a WINNING trade of this invested amount. Never used for a loss. */
+export function calculateTieredProfit(investedAmount: number): TieredProfit {
+  const profitRate = getProfitRateByInvestment(investedAmount)
+  return {
+    profitRate,
+    profitPercentage: roundUsd(profitRate * 100),
+    profitAmount: roundUsd(investedAmount * profitRate),
+  }
+}
+
 function requireDb() {
   if (!db) {
     throw new TradingError('Firebase is not configured yet — add your project keys to .env.')
