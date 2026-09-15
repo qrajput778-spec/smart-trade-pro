@@ -169,7 +169,7 @@ export async function openTimedTrade(
 
     const balance = typeof snapshot.data().balance === 'number' ? snapshot.data().balance : 0
     if (roundedInvested > balance) {
-      throw new TradingError('Insufficient virtual cash for this trade.')
+      throw new TradingError('Insufficient available balance for this trade.')
     }
 
     transaction.update(userRef, { balance: roundUsd(balance - roundedInvested) })

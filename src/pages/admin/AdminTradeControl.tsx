@@ -131,9 +131,9 @@ export default function AdminTradeControl() {
   const confirmCopy: Record<TradeOutcomeMode, string> = {
     NORMAL: 'Disable the active mode? Trades will return to normal, market-priced settlement.',
     FORCE_WIN:
-      'Enable Force Win mode? All currently open trades and future trades will settle as simulated winning trades while this mode remains active.',
+      'Enable Force Win mode? All currently open and future trades will settle with a winning outcome while this mode remains active.',
     FORCE_LOSS:
-      'Enable Force Loss mode? All currently open trades and future trades will settle as simulated losing trades while this mode remains active.',
+      'Enable Force Loss mode? All currently open and future trades will settle with a losing outcome while this mode remains active.',
   }
   const confirmTitle: Record<TradeOutcomeMode, string> = {
     NORMAL: 'Disable Forced Mode',
@@ -153,10 +153,10 @@ export default function AdminTradeControl() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold text-text-primary">Global Trade Outcome Control</h1>
-            <Badge tone="gold">Simulation Control</Badge>
+            <Badge tone="gold">Outcome Control</Badge>
           </div>
           <p className="mt-1 max-w-2xl text-sm text-text-muted">
-            Control the simulated outcome of current and future trades.
+            Control configured outcomes for current and future trades.
           </p>
         </div>
       </header>

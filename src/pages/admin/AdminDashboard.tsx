@@ -104,8 +104,7 @@ export default function AdminDashboard() {
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Admin Dashboard</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Aggregate, read-only stats across all accounts. Every number here is simulated —
-            this is a monitoring view, not a real financial ledger.
+            Aggregate, read-only metrics across all accounts for operational monitoring.
           </p>
         </div>
       </header>
@@ -134,7 +133,7 @@ export default function AdminDashboard() {
           )}
         </Card>
         <Card>
-          <span className="text-xs uppercase tracking-wide text-text-muted">Total Simulated Volume</span>
+          <span className="text-xs uppercase tracking-wide text-text-muted">Total Trade Volume</span>
           {loading ? (
             <div className="mt-2 h-8 w-32 animate-pulse rounded bg-surface-alt" />
           ) : (
@@ -188,7 +187,7 @@ export default function AdminDashboard() {
               <Users size={20} className="text-accent-gold" />
               <div>
                 <p className="font-medium text-text-primary">All Users</p>
-                <p className="text-xs text-text-muted">Browse every account and its virtual balance.</p>
+                <p className="text-xs text-text-muted">Browse every account and its current balance.</p>
               </div>
             </div>
             <ArrowRight size={16} className="text-text-muted" />
@@ -200,7 +199,7 @@ export default function AdminDashboard() {
               <LineChart size={20} className="text-accent-gold" />
               <div>
                 <p className="font-medium text-text-primary">Trade Feed</p>
-                <p className="text-xs text-text-muted">Most recent simulated trades across all users.</p>
+                <p className="text-xs text-text-muted">Most recent trades across all users.</p>
               </div>
             </div>
             <ArrowRight size={16} className="text-text-muted" />

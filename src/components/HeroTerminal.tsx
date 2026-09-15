@@ -22,7 +22,7 @@ export default function HeroTerminal({ btc, history, loading, error }: HeroTermi
         <span className="h-2.5 w-2.5 rounded-full bg-danger/70" />
         <span className="h-2.5 w-2.5 rounded-full bg-accent-gold/70" />
         <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
-        <span className="ml-3 font-mono text-xs text-text-muted">BTC / USDT · simulated feed</span>
+        <span className="ml-3 font-mono text-xs text-text-muted">BTC / USDT · live market feed</span>
       </div>
 
       <div className="p-5">

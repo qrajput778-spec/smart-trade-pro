@@ -102,8 +102,7 @@ export default function Signup() {
       <Card className="w-full max-w-md">
         <h1 className="text-2xl font-semibold text-text-primary">Create your account</h1>
         <p className="mt-1 text-sm text-text-muted">
-          Every account starts at $0 — request a virtual deposit once you're in to start
-          practicing. No card, no real money.
+          Create your account to access markets, portfolio tools, and account requests.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>

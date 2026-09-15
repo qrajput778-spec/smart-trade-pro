@@ -98,8 +98,7 @@ export default function AdminTrades() {
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Trade Feed</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Live, read-only. The {TRADES_FEED_LIMIT} most recent simulated trades across all
-            accounts — no real orders, no real money.
+            Live, read-only view of the {TRADES_FEED_LIMIT} most recent trades across all accounts.
           </p>
         </div>
       </header>

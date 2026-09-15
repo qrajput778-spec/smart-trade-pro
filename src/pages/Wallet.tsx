@@ -122,7 +122,7 @@ export default function Wallet() {
     <PageContainer>
       <header>
         <h1 className="text-2xl font-semibold text-text-primary">Wallet</h1>
-        <p className="mt-1 text-sm text-text-muted">Your virtual cash, holdings, and trade history.</p>
+        <p className="mt-1 text-sm text-text-muted">Manage your cash balance, holdings, and trade history.</p>
       </header>
 
       {/* Wallet balance hero — the page's main focal point, matching a
@@ -166,7 +166,12 @@ export default function Wallet() {
         </div>
       </Card>
 
-      <DepositModal open={depositOpen} onClose={() => setDepositOpen(false)} uid={user?.uid ?? ''} email={email} />
+      <DepositModal
+        open={depositOpen}
+        onClose={() => setDepositOpen(false)}
+        uid={user?.uid ?? ''}
+        authenticatedEmail={user?.email ?? ''}
+      />
       <WithdrawModal
         open={withdrawOpen}
         onClose={() => setWithdrawOpen(false)}

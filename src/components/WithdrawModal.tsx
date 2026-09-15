@@ -18,12 +18,9 @@ interface WithdrawModalProps {
 type Step = 'form' | 'review' | 'success'
 
 /**
- * Recipient address is required but purely informational here — there's no
- * real counterparty in a paper-trading simulator, so nothing is ever
- * actually sent there. It's stored on the request doc so an admin has that
- * context while manually reviewing it (src/lib/balanceRequests.ts). No fee
- * is shown: nothing in the existing withdrawal logic charges one, and
- * making one up would just be misleading.
+ * Recipient address is required and stored with the request so an admin has
+ * the destination context while manually reviewing it (src/lib/balanceRequests.ts).
+ * No fee is shown because the existing withdrawal logic does not charge one.
  */
 export default function WithdrawModal({ open, onClose, uid, email, balance, pendingWithdrawalTotal }: WithdrawModalProps) {
   const [step, setStep] = useState<Step>('form')
@@ -97,7 +94,7 @@ export default function WithdrawModal({ open, onClose, uid, email, balance, pend
 
           <div>
             <TextField
-              label="Amount (USD, simulated)"
+              label="Amount (USD)"
               name="amount"
               type="number"
               min="0.01"
@@ -122,8 +119,7 @@ export default function WithdrawModal({ open, onClose, uid, email, balance, pend
 
           <p className="flex items-start gap-2 rounded-md border border-border bg-surface-alt px-3 py-2.5 text-xs text-text-muted">
             <ShieldAlert size={14} className="mt-0.5 flex-none text-accent-gold" />
-            This is a virtual paper-trading withdrawal. Your balance is only deducted once an admin
-            approves the request — never on submission.
+            Your balance is deducted only once an admin approves the request — never on submission.
           </p>
 
           <Button type="submit" className="w-full" disabled={availableToWithdraw <= 0}>
@@ -154,7 +150,7 @@ export default function WithdrawModal({ open, onClose, uid, email, balance, pend
           <p className="flex items-start gap-2 rounded-md border border-accent-gold/30 bg-accent-gold-soft px-3 py-2.5 text-xs text-text-primary">
             <ShieldAlert size={14} className="mt-0.5 flex-none text-accent-gold" />
             <span>
-              <strong className="font-semibold">This is a simulated paper-trading withdrawal.</strong> Submitting
+              <strong className="font-semibold">Withdrawal requests require admin review.</strong> Submitting
               creates a pending request and reserves this amount — your balance is deducted only once an
               admin approves it.
             </span>

@@ -131,7 +131,7 @@ export default function AdminUsers() {
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">All Users</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Read-only. Balances and portfolio values are simulated virtual funds.
+            Read-only account balances and portfolio values.
           </p>
         </div>
       </header>
@@ -232,7 +232,7 @@ export default function AdminUsers() {
               <h3 className="text-lg font-semibold text-text-primary">Remove {removeTarget.displayName}</h3>
             </div>
             <p className="mt-2 text-sm text-text-muted">
-              This permanently deletes {removeTarget.email}'s account, virtual balance, holdings,
+              This permanently deletes {removeTarget.email}'s account, balance, holdings,
               and full trade/support history from Smart Trade Pro. This cannot be undone. It does
               not revoke their Firebase sign-in credentials — that would need to be done separately
               in the Firebase console.
@@ -244,7 +244,7 @@ export default function AdminUsers() {
                 name="removeReason"
                 value={removeReason}
                 onChange={(event) => setRemoveReason(event.target.value)}
-                placeholder="e.g. Fraudulent test account, user requested deletion"
+                placeholder="e.g. Account closure requested by user"
               />
               <TextField
                 label={'Type "REMOVE" to confirm'}

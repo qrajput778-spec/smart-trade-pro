@@ -18,8 +18,7 @@ export default function Footer() {
             SMART TRADE <span className="text-accent-gold">PRO</span>
           </p>
           <p className="mt-2 text-xs text-text-muted max-w-xs">
-            A university course project. Paper-trading simulation only — every balance
-            here is virtual.
+            Market insights, portfolio tools, and account support in one streamlined platform.
           </p>
         </div>
         {footerLinkColumns.map((column) => (
@@ -38,8 +37,7 @@ export default function Footer() {
         ))}
       </div>
       <div className="border-t border-border px-6 py-4 text-center text-xs text-text-muted">
-        SMART TRADE PRO — a university course project. Paper-trading simulation only, no
-        real funds are ever moved.
+        © {new Date().getFullYear()} SMART TRADE PRO. All rights reserved.
       </div>
     </footer>
   )

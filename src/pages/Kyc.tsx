@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import {
-  BookUser,
-  Camera,
+  Car,
   CheckCircle2,
   Clock,
-  Car,
   IdCard,
   ShieldAlert,
   ShieldCheck,
@@ -23,7 +21,6 @@ import { db } from '../lib/firebase'
 import {
   KYC_DOC_TYPE_LABELS,
   KYC_ID_DOC_ACCEPT,
-  KYC_PHOTO_ACCEPT,
   KYC_STATUS_META,
   KycError,
   submitKycVerification,
@@ -38,14 +35,13 @@ interface SubmissionRow {
   submittedAt: Date | null
   reviewedAt: Date | null
   rejectionReason: string | null
-  idCard: KycDocumentInfo | null
-  drivingLicense: KycDocumentInfo | null
-  passport: KycDocumentInfo | null
-  photo: KycDocumentInfo | null
+  idCardFront: KycDocumentInfo | null
+  idCardBack: KycDocumentInfo | null
+  drivingLicenseFront: KycDocumentInfo | null
+  drivingLicenseBack: KycDocumentInfo | null
 }
 
 const ID_ACCEPT = KYC_ID_DOC_ACCEPT.join(',')
-const PHOTO_ACCEPT = KYC_PHOTO_ACCEPT.join(',')
 
 const STATUS_ICON: Record<KycDisplayStatus, typeof ShieldCheck> = {
   not_started: ShieldQuestion,
@@ -54,12 +50,15 @@ const STATUS_ICON: Record<KycDisplayStatus, typeof ShieldCheck> = {
   rejected: ShieldX,
 }
 
+const REQUIRED_DOC_TYPES: KycDocumentType[] = [
+  'idCardFront',
+  'idCardBack',
+  'drivingLicenseFront',
+  'drivingLicenseBack',
+]
+
 function submittedDocList(row: SubmissionRow): string {
-  const types: KycDocumentType[] = []
-  if (row.idCard?.uploaded) types.push('idCard')
-  if (row.drivingLicense?.uploaded) types.push('drivingLicense')
-  if (row.passport?.uploaded) types.push('passport')
-  if (row.photo?.uploaded) types.push('photo')
+  const types = REQUIRED_DOC_TYPES.filter((t) => row[t]?.uploaded)
   return types.map((t) => KYC_DOC_TYPE_LABELS[t]).join(', ') || '—'
 }
 
@@ -70,11 +69,10 @@ export default function Kyc() {
   const [submissions, setSubmissions] = useState<SubmissionRow[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [idCard, setIdCard] = useState<File | null>(null)
-  const [drivingLicense, setDrivingLicense] = useState<File | null>(null)
-  const [passport, setPassport] = useState<File | null>(null)
-  const [photo, setPhoto] = useState<File | null>(null)
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
+  const [idCardFront, setIdCardFront] = useState<File | null>(null)
+  const [idCardBack, setIdCardBack] = useState<File | null>(null)
+  const [drivingLicenseFront, setDrivingLicenseFront] = useState<File | null>(null)
+  const [drivingLicenseBack, setDrivingLicenseBack] = useState<File | null>(null)
 
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<KycDocumentType, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -106,10 +104,10 @@ export default function Kyc() {
             submittedAt: submittedAt?.toDate ? submittedAt.toDate() : null,
             reviewedAt: reviewedAt?.toDate ? reviewedAt.toDate() : null,
             rejectionReason: typeof data.rejectionReason === 'string' ? data.rejectionReason : null,
-            idCard: data.idCard ?? null,
-            drivingLicense: data.drivingLicense ?? null,
-            passport: data.passport ?? null,
-            photo: data.photo ?? null,
+            idCardFront: data.idCardFront ?? null,
+            idCardBack: data.idCardBack ?? null,
+            drivingLicenseFront: data.drivingLicenseFront ?? null,
+            drivingLicenseBack: data.drivingLicenseBack ?? null,
           }
         })
         rows.sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0))
@@ -121,46 +119,36 @@ export default function Kyc() {
     return unsubscribe
   }, [user])
 
-  useEffect(() => {
-    if (!photo) {
-      setPhotoPreviewUrl(null)
-      return
-    }
-    const url = URL.createObjectURL(photo)
-    setPhotoPreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [photo])
-
   const current = submissions[0] ?? null
   const displayStatus = (current?.status ?? 'not_started') as KycDisplayStatus
   const canSubmit = displayStatus === 'not_started' || displayStatus === 'rejected'
   const StatusIcon = STATUS_ICON[displayStatus]
   const statusMeta = KYC_STATUS_META[displayStatus]
 
+  const FILE_SETTERS: Record<KycDocumentType, (file: File | null) => void> = {
+    idCardFront: setIdCardFront,
+    idCardBack: setIdCardBack,
+    drivingLicenseFront: setDrivingLicenseFront,
+    drivingLicenseBack: setDrivingLicenseBack,
+  }
+
   function handleFileSelect(docType: KycDocumentType, file: File | null) {
     setFormError(null)
     setSuccessMessage(null)
     if (file) {
-      const err = validateKycFile(file, docType === 'photo' ? 'photo' : 'id')
+      const err = validateKycFile(file)
       setFieldErrors((prev) => ({ ...prev, [docType]: err ?? undefined }))
       if (err) file = null
     } else {
       setFieldErrors((prev) => ({ ...prev, [docType]: undefined }))
     }
-    if (docType === 'idCard') setIdCard(file)
-    else if (docType === 'drivingLicense') setDrivingLicense(file)
-    else if (docType === 'passport') setPassport(file)
-    else setPhoto(file)
+    FILE_SETTERS[docType](file)
   }
 
   function handleOpenConfirm() {
     setFormError(null)
-    if (!idCard && !drivingLicense && !passport) {
-      setFormError('Upload at least one government-issued ID: an ID Card, Driving License, or Passport.')
-      return
-    }
-    if (!photo) {
-      setFormError('Upload your verification photo.')
+    if (!idCardFront || !idCardBack) {
+      setFormError('Upload both sides of your ID Card / PAN Card.')
       return
     }
     setConfirmChecked(false)
@@ -168,7 +156,7 @@ export default function Kyc() {
   }
 
   async function handleConfirmSubmit() {
-    if (!user || !confirmChecked || !photo) return
+    if (!user || !confirmChecked || !idCardFront || !idCardBack) return
     setSubmitting(true)
     setFormError(null)
     setProgress({})
@@ -176,18 +164,38 @@ export default function Kyc() {
       await submitKycVerification(
         user.uid,
         user.email ?? '',
-        { idCard: idCard ?? undefined, drivingLicense: drivingLicense ?? undefined, passport: passport ?? undefined, photo },
+        {
+          idCardFront,
+          idCardBack,
+          drivingLicenseFront: drivingLicenseFront ?? undefined,
+          drivingLicenseBack: drivingLicenseBack ?? undefined,
+        },
         (docType, percent) => setProgress((prev) => ({ ...prev, [docType]: percent })),
       )
       setConfirmOpen(false)
-      setIdCard(null)
-      setDrivingLicense(null)
-      setPassport(null)
-      setPhoto(null)
+      setIdCardFront(null)
+      setIdCardBack(null)
+      setDrivingLicenseFront(null)
+      setDrivingLicenseBack(null)
       setProgress({})
       setSuccessMessage('Your documents have been submitted successfully and are awaiting review.')
     } catch (err) {
-      setFormError(err instanceof KycError ? err.message : 'Could not submit your verification — please try again.')
+      // Always log the real error to the console — a KycError's .message is
+      // already user-safe and shown below, but anything else (a stale HMR
+      // module, a raw Firestore/Supabase error, an unexpected JS exception)
+      // would otherwise vanish behind the generic fallback text with no way
+      // to diagnose it. Never logs file contents — only the error object
+      // itself (message/code/stack), which carries no document data.
+      // eslint-disable-next-line no-console
+      console.error('[kyc] submission failed', err)
+      const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : null
+      setFormError(
+        err instanceof KycError
+          ? err.message
+          : import.meta.env.DEV && code
+            ? `Could not submit your verification (${code}). Check the Firestore rules, Supabase storage policies, and .env keys.`
+            : 'Could not submit your verification — please try again.',
+      )
     } finally {
       setSubmitting(false)
     }
@@ -195,13 +203,18 @@ export default function Kyc() {
 
   const selectedFiles = useMemo(
     () =>
-      [
-        idCard && { label: 'ID Card', file: idCard },
-        drivingLicense && { label: 'Driving License', file: drivingLicense },
-        passport && { label: 'Passport', file: passport },
-        photo && { label: 'Photo', file: photo },
-      ].filter((x): x is { label: string; file: File } => Boolean(x)),
-    [idCard, drivingLicense, passport, photo],
+      REQUIRED_DOC_TYPES.map((docType) => {
+        const file =
+          docType === 'idCardFront'
+            ? idCardFront
+            : docType === 'idCardBack'
+              ? idCardBack
+              : docType === 'drivingLicenseFront'
+                ? drivingLicenseFront
+                : drivingLicenseBack
+        return file && { label: KYC_DOC_TYPE_LABELS[docType], file }
+      }).filter((x): x is { label: string; file: File } => Boolean(x)),
+    [idCardFront, idCardBack, drivingLicenseFront, drivingLicenseBack],
   )
 
   if (loading) {
@@ -309,56 +322,56 @@ export default function Kyc() {
         <section ref={formRef} className="mt-10">
           <h2 className="text-lg font-semibold text-text-primary">Upload Documents</h2>
           <p className="mt-1 text-xs text-text-muted">
-            Required: your verification photo, plus <strong className="font-medium text-text-primary">one</strong> government-issued
-            ID below (ID Card, Driving License, or Passport — you don't need all three). This is a simulated verification for a
-            course project — please use placeholder images, never a real government ID document.
+            Required: your <strong className="font-medium text-text-primary">ID Card / PAN Card</strong> — both
+            sides. Your <strong className="font-medium text-text-primary">Driving License</strong> is optional. This
+            uses an in-platform review workflow. To protect your privacy, upload only approved document images — never
+            original government ID documents.
           </p>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <KycDocumentCard
-              title="ID Card"
-              description="A national or state-issued ID card."
+              title="ID/PAN Card — Front"
+              description="Front side of your national ID or PAN card."
               icon={IdCard}
               accept={ID_ACCEPT}
-              file={idCard}
-              onFileSelect={(f) => handleFileSelect('idCard', f)}
-              error={fieldErrors.idCard ?? null}
-              progress={progress.idCard ?? null}
-              badge="Choose one ID"
+              file={idCardFront}
+              onFileSelect={(f) => handleFileSelect('idCardFront', f)}
+              error={fieldErrors.idCardFront ?? null}
+              progress={progress.idCardFront ?? null}
+              badge="Required"
             />
             <KycDocumentCard
-              title="Driving License"
-              description="A valid driving license."
+              title="ID/PAN Card — Back"
+              description="Back side of your national ID or PAN card."
+              icon={IdCard}
+              accept={ID_ACCEPT}
+              file={idCardBack}
+              onFileSelect={(f) => handleFileSelect('idCardBack', f)}
+              error={fieldErrors.idCardBack ?? null}
+              progress={progress.idCardBack ?? null}
+              badge="Required"
+            />
+            <KycDocumentCard
+              title="Driving License — Front"
+              description="Front side of your driving license."
               icon={Car}
               accept={ID_ACCEPT}
-              file={drivingLicense}
-              onFileSelect={(f) => handleFileSelect('drivingLicense', f)}
-              error={fieldErrors.drivingLicense ?? null}
-              progress={progress.drivingLicense ?? null}
-              badge="Choose one ID"
+              file={drivingLicenseFront}
+              onFileSelect={(f) => handleFileSelect('drivingLicenseFront', f)}
+              error={fieldErrors.drivingLicenseFront ?? null}
+              progress={progress.drivingLicenseFront ?? null}
+              badge="Optional"
             />
             <KycDocumentCard
-              title="Passport"
-              description="A valid passport photo page."
-              icon={BookUser}
+              title="Driving License — Back"
+              description="Back side of your driving license."
+              icon={Car}
               accept={ID_ACCEPT}
-              file={passport}
-              onFileSelect={(f) => handleFileSelect('passport', f)}
-              error={fieldErrors.passport ?? null}
-              progress={progress.passport ?? null}
-              badge="Choose one ID"
-            />
-            <KycDocumentCard
-              title="Upload Photo"
-              description="A clear photo of yourself for verification (not facial recognition)."
-              icon={Camera}
-              accept={PHOTO_ACCEPT}
-              file={photo}
-              onFileSelect={(f) => handleFileSelect('photo', f)}
-              error={fieldErrors.photo ?? null}
-              progress={progress.photo ?? null}
-              previewUrl={photoPreviewUrl}
-              badge="Required"
+              file={drivingLicenseBack}
+              onFileSelect={(f) => handleFileSelect('drivingLicenseBack', f)}
+              error={fieldErrors.drivingLicenseBack ?? null}
+              progress={progress.drivingLicenseBack ?? null}
+              badge="Optional"
             />
           </div>
 
@@ -426,8 +439,7 @@ export default function Kyc() {
 
           <p className="flex items-start gap-2 rounded-md border border-border bg-surface-alt px-3 py-2.5 text-xs text-text-muted">
             <Clock size={14} className="mt-0.5 flex-none text-accent-gold" />
-            This is a simulated verification for a course project. An admin will review these files — your status will show
-            "Verification Pending" until then.
+            An admin will review these files — your status will show "Verification Pending" until then.
           </p>
 
           <label className="flex items-start gap-2 text-sm text-text-primary">

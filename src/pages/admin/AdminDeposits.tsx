@@ -10,8 +10,7 @@ export default function AdminDeposits() {
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Deposit Requests</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Review and approve simulated deposit requests. Approving credits the user's virtual
-            balance — there is no real payment behind any of these.
+            Review deposit requests and approve eligible balance updates.
           </p>
         </div>
       </header>

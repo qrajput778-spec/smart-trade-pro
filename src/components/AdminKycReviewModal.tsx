@@ -26,10 +26,10 @@ interface SubmissionForReview {
   reviewedAt: Date | null
   reviewedBy: string | null
   rejectionReason: string | null
-  idCard: KycDocumentInfo | null
-  drivingLicense: KycDocumentInfo | null
-  passport: KycDocumentInfo | null
-  photo: KycDocumentInfo | null
+  idCardFront: KycDocumentInfo | null
+  idCardBack: KycDocumentInfo | null
+  drivingLicenseFront: KycDocumentInfo | null
+  drivingLicenseBack: KycDocumentInfo | null
 }
 
 interface AdminKycReviewModalProps {
@@ -40,7 +40,7 @@ interface AdminKycReviewModalProps {
   onClose: () => void
 }
 
-const DOC_ORDER: KycDocumentType[] = ['idCard', 'drivingLicense', 'passport', 'photo']
+const DOC_ORDER: KycDocumentType[] = ['idCardFront', 'idCardBack', 'drivingLicenseFront', 'drivingLicenseBack']
 
 function isPdf(fileName: string) {
   return fileName.toLowerCase().endsWith('.pdf')

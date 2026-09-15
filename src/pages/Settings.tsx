@@ -7,13 +7,11 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import TextField from '../components/TextField'
 import PageContainer from '../components/PageContainer'
-import ConfirmDialog from '../components/ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { auth, db } from '../lib/firebase'
 import { getAuthErrorMessage } from '../lib/authErrors'
 import { updateDisplayName, changePassword, deleteAccount, AccountError } from '../lib/account'
-import { resetPortfolio } from '../lib/trading'
 
 interface ProfileDoc {
   displayName: string
@@ -123,26 +121,6 @@ export default function Settings() {
     }
   }
 
-  // ---- Danger zone: reset portfolio ----
-  const [resetPending, setResetPending] = useState(false)
-  const [resetError, setResetError] = useState<string | null>(null)
-  const [resetDialogOpen, setResetDialogOpen] = useState(false)
-
-  async function handleResetPortfolio() {
-    if (!user) return
-    setResetPending(true)
-    setResetError(null)
-    try {
-      await resetPortfolio(user.uid)
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[settings] reset portfolio failed', err)
-      setResetError('Could not reset your portfolio — please try again.')
-    } finally {
-      setResetPending(false)
-    }
-  }
-
   // ---- Danger zone: delete account ----
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletePassword, setDeletePassword] = useState('')
@@ -212,7 +190,7 @@ export default function Settings() {
                 disabled
                 className="mt-1.5 w-full cursor-not-allowed rounded-md border border-border bg-surface-alt px-3 py-2 text-sm text-text-muted"
               />
-              <p className="mt-1 text-xs text-text-muted">Changing email isn't supported in this demo.</p>
+              <p className="mt-1 text-xs text-text-muted">Changing email is not currently supported.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary">Member since</label>
@@ -320,19 +298,6 @@ export default function Settings() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-danger">Danger Zone</h2>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
-            <div>
-              <p className="text-sm font-medium text-text-primary">Reset Portfolio</p>
-              <p className="mt-1 text-xs text-text-muted">
-                Sets your balance back to the starting amount and clears holdings and realized P&amp;L.
-              </p>
-            </div>
-            <Button variant="danger" onClick={() => setResetDialogOpen(true)} disabled={resetPending} className="flex-none">
-              {resetPending ? 'Resetting…' : 'Reset Portfolio'}
-            </Button>
-          </div>
-          {resetError && <p className="mt-2 text-xs text-danger">{resetError}</p>}
-
           <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-text-primary">Delete Account</p>
@@ -355,7 +320,7 @@ export default function Settings() {
               <h3 className="text-lg font-semibold text-text-primary">Delete your account</h3>
             </div>
             <p className="mt-2 text-sm text-text-muted">
-              This permanently deletes your account, virtual balance, holdings, and full trade
+              This permanently deletes your account, balance, holdings, and full trade
               history. This cannot be undone.
             </p>
 
@@ -395,16 +360,6 @@ export default function Settings() {
         </div>
       )}
 
-      <ConfirmDialog
-        open={resetDialogOpen}
-        onClose={() => setResetDialogOpen(false)}
-        title="Reset Portfolio?"
-        description="Set your balance back to the starting amount and clear all holdings and realized P&L. This cannot be undone."
-        confirmLabel="Reset Portfolio"
-        loadingLabel="Resetting…"
-        variant="danger"
-        onConfirm={handleResetPortfolio}
-      />
     </PageContainer>
   )
 }

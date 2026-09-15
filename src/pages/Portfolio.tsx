@@ -283,7 +283,7 @@ export default function Portfolio() {
         {rows.length === 0 ? (
           <Card className="mt-4 flex flex-col items-center gap-3 py-12 text-center">
             <p className="max-w-sm text-text-muted">
-              You don't have any open positions yet — every balance here is simulated.
+              You don't have any open positions yet. Explore markets to build your portfolio.
             </p>
             <Link to="/markets">
               <Button variant="primary">Explore markets to place your first trade</Button>

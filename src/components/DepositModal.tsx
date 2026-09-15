@@ -10,21 +10,20 @@ interface DepositModalProps {
   open: boolean
   onClose: () => void
   uid: string
-  email: string
+  /** Firebase Auth email — the value Firestore rules bind a deposit request to. */
+  authenticatedEmail: string
 }
 
 /**
- * Purely cosmetic "transfer gateway" selector — Smart Trade Pro is a
- * paper-trading simulator, so these do not change how a request is
- * processed (every one calls the same submitDepositRequest). They only
- * select which configured deposit address is displayed in the UI.
+ * Configured deposit-network selector. Each option uses the same request
+ * workflow and selects the destination shown in the UI.
  */
 const DEPOSIT_GATEWAYS = [
   {
     id: 'bep20',
     name: 'BNB Smart Chain (BEP20)' as DepositNetwork,
-    subtitle: 'BSC · Binance Smart Chain (simulated)',
-    minNote: 'Min >0.01 USD (simulated)',
+    subtitle: 'BSC · Binance Smart Chain',
+    minNote: 'Minimum request: $0.01',
     eta: '≈1 min',
     icon: Hexagon,
     iconClassName: 'bg-amber-500/15 text-amber-400',
@@ -33,8 +32,8 @@ const DEPOSIT_GATEWAYS = [
   {
     id: 'trc20',
     name: 'Tron (TRC20)' as DepositNetwork,
-    subtitle: 'TRX · Tron Network (simulated)',
-    minNote: 'Min >0.01 USD (simulated)',
+    subtitle: 'TRX · Tron Network',
+    minNote: 'Minimum request: $0.01',
     eta: null,
     icon: Triangle,
     iconClassName: 'bg-red-500/15 text-red-400',
@@ -43,8 +42,8 @@ const DEPOSIT_GATEWAYS = [
   {
     id: 'erc20',
     name: 'Ethereum (ERC20)' as DepositNetwork,
-    subtitle: 'ETH · Ethereum Network (simulated)',
-    minNote: 'Min >0.001 USD (simulated)',
+    subtitle: 'ETH · Ethereum Network',
+    minNote: 'Minimum request: $0.001',
     eta: '≈2 mins',
     icon: Gem,
     iconClassName: 'bg-blue-500/15 text-blue-400',
@@ -54,7 +53,7 @@ const DEPOSIT_GATEWAYS = [
 
 type Step = 'form' | 'review' | 'success'
 
-export default function DepositModal({ open, onClose, uid, email }: DepositModalProps) {
+export default function DepositModal({ open, onClose, uid, authenticatedEmail }: DepositModalProps) {
   const [step, setStep] = useState<Step>('form')
   const [gatewayId, setGatewayId] = useState<(typeof DEPOSIT_GATEWAYS)[number]['id']>('bep20')
   const [amount, setAmount] = useState('')
@@ -103,7 +102,7 @@ export default function DepositModal({ open, onClose, uid, email }: DepositModal
     setSubmitting(true)
     setError(null)
     try {
-      await submitDepositRequest(uid, email, submittedAmount, gateway.name, gateway.address)
+      await submitDepositRequest(uid, authenticatedEmail, submittedAmount, gateway.name, gateway.address)
       setStep('success')
     } catch (err) {
       // Preserve the concise production copy, but make a Firestore failure
@@ -148,13 +147,13 @@ export default function DepositModal({ open, onClose, uid, email }: DepositModal
               />
             </div>
             <p className="mt-2 text-xs text-text-muted">
-              Funds arrive to your virtual USD balance. Choose a simulated transfer gateway below.
+              Choose the network for your deposit request below.
             </p>
           </div>
 
           <div>
             <p className="text-center text-xs font-medium uppercase tracking-wide text-text-muted">
-              Choose transfer gateway
+              Choose network
             </p>
             <div className="mt-2 space-y-2">
               {DEPOSIT_GATEWAYS.map((item) => {
@@ -228,8 +227,7 @@ export default function DepositModal({ open, onClose, uid, email }: DepositModal
 
           <p className="flex items-center gap-2 text-xs text-text-muted">
             <Clock size={13} className="flex-none text-accent-gold" />
-            Status: Pending — this simulated request is reviewed by an admin before your balance
-            updates. It is never credited automatically.
+            Status: Pending — your request is reviewed by an admin before your balance updates.
           </p>
 
           {error && <p className="text-xs text-danger">{error}</p>}

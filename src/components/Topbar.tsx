@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { Bell, LogOut, Menu, Moon, Search, ShieldCheck, Sun } from 'lucide-react'
+import { LogOut, Menu, Moon, ShieldCheck, Sun } from 'lucide-react'
 import PriceTicker from './PriceTicker'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
@@ -57,17 +57,6 @@ export default function Topbar({ onOpenSidebar }: TopbarProps) {
           <Menu size={20} />
         </button>
 
-        {/* Purely decorative (no search is wired up yet) — hidden below sm
-            rather than squeezed, so the hamburger/icons/avatar always stay
-            fully visible and reachable on a narrow phone. */}
-        <div className="hidden w-full max-w-md items-center gap-2 rounded-md border border-border bg-surface-alt px-3 py-2 text-sm text-text-muted sm:flex">
-          <Search size={16} className="flex-none" />
-          <span className="flex-1 truncate">Search crypto markets, coins, pairs...</span>
-          <kbd className="flex-none rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
-            ⌘K
-          </kbd>
-        </div>
-
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -77,14 +66,6 @@ export default function Topbar({ onOpenSidebar }: TopbarProps) {
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
-          </button>
-          <button
-            type="button"
-            className="rounded-md p-2 text-text-muted transition-colors hover:text-text-primary"
-            aria-label="Notifications"
-            title="Notifications (coming soon)"
-          >
-            <Bell size={18} />
           </button>
 
           <div className="relative ml-2" ref={menuRef}>

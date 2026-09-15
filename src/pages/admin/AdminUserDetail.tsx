@@ -271,7 +271,7 @@ export default function AdminUserDetail() {
 
       <div className="mt-8 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
         <Card>
-          <span className="text-xs uppercase tracking-wide text-text-muted">Cash Balance (simulated)</span>
+          <span className="text-xs uppercase tracking-wide text-text-muted">Cash Balance</span>
           <p className="mt-2 font-mono text-2xl text-text-primary">{formatUsd(account.balance)}</p>
         </Card>
         <Card>
@@ -426,19 +426,17 @@ export default function AdminUserDetail() {
           <div className="flex items-center gap-2">
             <AlertTriangle size={16} className="text-danger" />
             <h2 className="text-sm font-semibold uppercase tracking-wide text-danger">
-              Adjust Virtual Balance (testing only)
+              Adjust Account Balance
             </h2>
           </div>
           <p className="mt-2 text-xs text-text-muted">
-            This sets this user's simulated cash balance to an exact number for QA/support
-            purposes. It is not a deposit, withdrawal, or real transaction of any kind — there is
-            no funding source and no destination, just a number being reset. Every change is
-            logged with your admin account, the reason you give, and the before/after values.
+            Set this user's cash balance to an exact number for account support. Every change is
+            logged with your admin account, the reason you provide, and the before/after values.
           </p>
 
           <form onSubmit={handleAdjustBalance} className="mt-4 grid gap-4 sm:grid-cols-2" noValidate>
             <TextField
-              label="New balance (USD, simulated)"
+              label="New balance (USD)"
               name="newBalance"
               type="number"
               min="0"
@@ -452,7 +450,7 @@ export default function AdminUserDetail() {
               name="reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="e.g. QA reset for testing scenario X"
+              placeholder="e.g. Account review adjustment"
             />
 
             {actionError && <p className="text-xs text-danger sm:col-span-2">{actionError}</p>}
@@ -473,10 +471,10 @@ export default function AdminUserDetail() {
       <ConfirmDialog
         open={pendingAdjustment !== null}
         onClose={() => setPendingAdjustment(null)}
-        title="Adjust Virtual Balance?"
+        title="Adjust Account Balance?"
         description={
           pendingAdjustment
-            ? `Set this user's virtual balance to ${formatUsd(pendingAdjustment.balance)}? This simulated-funds adjustment is logged with your admin account and the reason you entered.`
+            ? `Set this user's balance to ${formatUsd(pendingAdjustment.balance)}? This adjustment is logged with your admin account and the reason you entered.`
             : ''
         }
         confirmLabel="Adjust Balance"

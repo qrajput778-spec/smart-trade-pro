@@ -79,7 +79,7 @@ export default function Login() {
     <div className="flex min-h-[80vh] items-center justify-center px-6 py-12">
       <Card className="w-full max-w-md">
         <h1 className="text-2xl font-semibold text-text-primary">Log in</h1>
-        <p className="mt-1 text-sm text-text-muted">Welcome back to your paper trading account.</p>
+        <p className="mt-1 text-sm text-text-muted">Access your markets, portfolio, and account tools.</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
           {errors.form && (

@@ -10,8 +10,7 @@ export default function AdminWithdrawals() {
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Withdrawal Requests</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Review and approve simulated withdrawal requests. Approving deducts the user's virtual
-            balance — there is no real payout behind any of these.
+            Review withdrawal requests and approve eligible balance updates.
           </p>
         </div>
       </header>

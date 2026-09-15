@@ -13,12 +13,10 @@ import {
   increment,
   runTransaction,
   serverTimestamp,
-  updateDoc,
   type Firestore,
   type Transaction,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import { STARTING_VIRTUAL_BALANCE } from './constants'
 import type { AdminTradeAction, HoldingsMap, TradeOutcomeMode } from '../types'
 
 export type OrderSide = 'buy' | 'sell'
@@ -146,7 +144,7 @@ export async function executeBuyOrder(
     // Re-validated against the value read *inside* the transaction, not the
     // possibly-stale value the page rendered with.
     if (total > balance) {
-      throw new TradingError('Insufficient virtual cash for this order.')
+      throw new TradingError('Insufficient available balance for this order.')
     }
 
     const existing = holdings[symbol]
@@ -383,23 +381,6 @@ export async function executeSellOrder(
   return { symbol, qty: roundedQty, price: executedPrice, total: executedTotal, realizedPnl }
 }
 
-/**
- * Resets a user's simulated portfolio back to day-one state: starting cash,
- * no holdings, no accumulated realized P&L. Shared by Dashboard, Wallet, and
- * Settings so there's exactly one implementation of "reset" to keep correct.
- * Trade/transaction history is left in place — this only touches the
- * account's current balance/holdings/P&L, not its past record.
- */
-export async function resetPortfolio(uid: string): Promise<void> {
-  const firestore = requireDb()
-  await updateDoc(doc(firestore, 'users', uid), {
-    balance: STARTING_VIRTUAL_BALANCE,
-    holdings: {},
-    shorts: {},
-    totalRealizedPnl: 0,
-  })
-}
-
 // ---------------------------------------------------------------------------
 // Short selling ("Sell" when the user doesn't hold enough of the coin to
 // cover it — see Trade.tsx, which routes to executeSellOrder above when the
@@ -476,7 +457,7 @@ export async function executeShortOrder(
     // Re-validated against the value read *inside* the transaction, not the
     // possibly-stale value the page rendered with.
     if (total > balance) {
-      throw new TradingError('Insufficient virtual cash to open this short position.')
+      throw new TradingError('Insufficient available balance to open this short position.')
     }
 
     const existing = shorts[symbol]

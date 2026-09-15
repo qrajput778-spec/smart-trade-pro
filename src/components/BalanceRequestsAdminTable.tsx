@@ -345,7 +345,7 @@ export default function BalanceRequestsAdminTable({ type }: { type: BalanceReque
           approvalTarget
             ? `Approve this ${formatUsd(approvalTarget.amount)} ${type} for ${approvalTarget.userEmail}? This will ${
                 type === 'deposit' ? 'increase' : 'decrease'
-              } their virtual balance by that amount and cannot be undone from here.`
+              } their balance by that amount and cannot be undone from here.`
             : ''
         }
         confirmLabel="Approve Request"

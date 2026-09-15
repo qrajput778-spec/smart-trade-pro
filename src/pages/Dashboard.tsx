@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { doc, increment, onSnapshot, updateDoc } from 'firebase/firestore'
+import { doc, onSnapshot } from 'firebase/firestore'
 import { Area, AreaChart, ResponsiveContainer, YAxis } from 'recharts'
-import { ArrowDownCircle, ArrowUpCircle, PlusCircle, RotateCcw } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
@@ -10,15 +10,13 @@ import MarketCard from '../components/MarketCard'
 import MiniStat from '../components/MiniStat'
 import PageContainer from '../components/PageContainer'
 import WatchlistTable from '../components/WatchlistTable'
-import ConfirmDialog from '../components/ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import { useMarketData } from '../context/MarketDataContext'
 import { db } from '../lib/firebase'
 import { usePortfolioSnapshots } from '../hooks/usePortfolioSnapshots'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { summarizeHoldings } from '../lib/portfolioMath'
-import { resetPortfolio } from '../lib/trading'
-import { ADD_VIRTUAL_FUNDS_AMOUNT, TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
+import { TRACKED_SYMBOLS, formatUsd } from '../lib/constants'
 import type { HoldingsMap } from '../types'
 
 interface AccountSnapshot {
@@ -26,8 +24,6 @@ interface AccountSnapshot {
   balance: number
   holdings: HoldingsMap
 }
-
-type PendingAction = 'add-funds' | 'reset' | null
 
 // A brand-new account (or one with a single trade) has fewer than 2 real
 // snapshots — a flat line at the current value is genuinely accurate there,
@@ -44,10 +40,6 @@ export default function Dashboard() {
   const [accountLoading, setAccountLoading] = useState(true)
   const [accountError, setAccountError] = useState<string | null>(null)
 
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null)
-  const [confirmAction, setConfirmAction] = useState<PendingAction>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-
   useEffect(() => {
     if (!user) return
 
@@ -57,8 +49,8 @@ export default function Dashboard() {
       return
     }
 
-    // Live subscription (not a one-time get) so balance/holdings changes —
-    // including the quick actions below — reflect here immediately.
+    // Live subscription (not a one-time get) so balance and holdings changes
+    // reflect here immediately.
     const unsubscribe = onSnapshot(
       doc(db, 'users', user.uid),
       (snapshot) => {
@@ -81,39 +73,6 @@ export default function Dashboard() {
 
     return unsubscribe
   }, [user])
-
-  async function handleAddFunds() {
-    if (!user || !db) return
-    setPendingAction('add-funds')
-    setActionError(null)
-    try {
-      // Firestore field update only — no payment provider, no real transfer.
-      await updateDoc(doc(db, 'users', user.uid), {
-        balance: increment(ADD_VIRTUAL_FUNDS_AMOUNT),
-      })
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[dashboard] add funds failed', err)
-      setActionError('Could not add virtual funds — please try again.')
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  async function handleResetPortfolio() {
-    if (!user || !db) return
-    setPendingAction('reset')
-    setActionError(null)
-    try {
-      await resetPortfolio(user.uid)
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[dashboard] reset portfolio failed', err)
-      setActionError('Could not reset your portfolio — please try again.')
-    } finally {
-      setPendingAction(null)
-    }
-  }
 
   if (accountLoading) {
     return (
@@ -243,47 +202,13 @@ export default function Dashboard() {
                 <ArrowDownCircle size={16} /> Sell
               </Button>
             </Link>
-            <Button
-              variant="secondary"
-              className="flex w-full items-center justify-center gap-2"
-              onClick={() => setConfirmAction('add-funds')}
-              disabled={pendingAction !== null}
-            >
-              <PlusCircle size={16} />
-              {pendingAction === 'add-funds' ? 'Adding…' : 'Add Virtual Funds'}
-            </Button>
-            <Button
-              variant="danger"
-              className="flex w-full items-center justify-center gap-2"
-              onClick={() => setConfirmAction('reset')}
-              disabled={pendingAction !== null}
-            >
-              <RotateCcw size={16} />
-              {pendingAction === 'reset' ? 'Resetting…' : 'Reset Portfolio'}
-            </Button>
           </div>
-          {actionError && <p className="mt-3 text-xs text-danger">{actionError}</p>}
           <p className="mt-auto pt-4 text-[11px] text-text-muted">
             Buy/Sell open the trading terminal once you pick a market — order execution isn't
             built yet.
           </p>
         </Card>
       </div>
-
-      <ConfirmDialog
-        open={confirmAction !== null}
-        onClose={() => setConfirmAction(null)}
-        title={confirmAction === 'add-funds' ? 'Add Virtual Funds?' : 'Reset Portfolio?'}
-        description={
-          confirmAction === 'add-funds'
-            ? 'Add $1,000 in virtual funds to your balance for simulated trading?'
-            : 'Set your balance back to the starting amount and clear all holdings. This cannot be undone.'
-        }
-        confirmLabel={confirmAction === 'add-funds' ? 'Add Funds' : 'Reset Portfolio'}
-        loadingLabel={confirmAction === 'add-funds' ? 'Adding…' : 'Resetting…'}
-        variant={confirmAction === 'reset' ? 'danger' : 'primary'}
-        onConfirm={() => (confirmAction === 'add-funds' ? handleAddFunds() : handleResetPortfolio())}
-      />
 
       {/* Market Overview */}
       <section className="mt-10">

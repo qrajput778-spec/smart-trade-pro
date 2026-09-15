@@ -533,12 +533,17 @@ service cloud.firestore {
       // A user can only ever file a request for themselves, in a fresh
       // 'pending' state with no reviewer fields set — they can't forge an
       // already-approved request, credit/debit someone else's account, or
-      // claim a reviewer identity. userEmail must match what's actually on
-      // their own profile, so the admin UI can't be fed a spoofed email.
+      // claim a reviewer identity. Deposit requests bind userEmail to the
+      // signed-in Firebase Auth account; that remains correct even for a
+      // legacy profile document whose email field is missing or stale.
+      // Withdrawal requests keep the existing profile-email check.
       allow create: if isSignedIn() &&
         request.resource.data.userId == request.auth.uid &&
-        request.resource.data.userEmail ==
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email &&
+        ((request.resource.data.type == 'deposit' &&
+            request.resource.data.userEmail == request.auth.token.email) ||
+          (request.resource.data.type == 'withdrawal' &&
+            request.resource.data.userEmail ==
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email)) &&
         request.resource.data.type in ['deposit', 'withdrawal'] &&
         request.resource.data.amount is number &&
         request.resource.data.amount > 0 &&

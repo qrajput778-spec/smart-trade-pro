@@ -18,10 +18,10 @@ interface SubmissionRow {
   reviewedAt: Date | null
   reviewedBy: string | null
   rejectionReason: string | null
-  idCard: KycDocumentInfo | null
-  drivingLicense: KycDocumentInfo | null
-  passport: KycDocumentInfo | null
-  photo: KycDocumentInfo | null
+  idCardFront: KycDocumentInfo | null
+  idCardBack: KycDocumentInfo | null
+  drivingLicenseFront: KycDocumentInfo | null
+  drivingLicenseBack: KycDocumentInfo | null
 }
 
 interface UserInfo {
@@ -32,12 +32,10 @@ type StatusFilter = 'all' | KycStatus
 
 const STATUS_FILTERS: StatusFilter[] = ['all', 'pending', 'verified', 'rejected']
 
+const DOC_TYPES: KycDocumentType[] = ['idCardFront', 'idCardBack', 'drivingLicenseFront', 'drivingLicenseBack']
+
 function docTypesFor(row: SubmissionRow): string {
-  const types: KycDocumentType[] = []
-  if (row.idCard?.uploaded) types.push('idCard')
-  if (row.drivingLicense?.uploaded) types.push('drivingLicense')
-  if (row.passport?.uploaded) types.push('passport')
-  if (row.photo?.uploaded) types.push('photo')
+  const types = DOC_TYPES.filter((t) => row[t]?.uploaded)
   return types.map((t) => KYC_DOC_TYPE_LABELS[t]).join(', ') || '—'
 }
 
@@ -95,10 +93,10 @@ export default function AdminKyc() {
             reviewedAt: reviewedAt?.toDate ? reviewedAt.toDate() : null,
             reviewedBy: typeof data.reviewedBy === 'string' ? data.reviewedBy : null,
             rejectionReason: typeof data.rejectionReason === 'string' ? data.rejectionReason : null,
-            idCard: data.idCard ?? null,
-            drivingLicense: data.drivingLicense ?? null,
-            passport: data.passport ?? null,
-            photo: data.photo ?? null,
+            idCardFront: data.idCardFront ?? null,
+            idCardBack: data.idCardBack ?? null,
+            drivingLicenseFront: data.drivingLicenseFront ?? null,
+            drivingLicenseBack: data.drivingLicenseBack ?? null,
           }
         })
         allRows.sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0))

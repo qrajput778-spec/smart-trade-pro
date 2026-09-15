@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Wallet', to: '/wallet', icon: Wallet },
   { label: 'Watchlist', to: '/watchlist', icon: Star },
   { label: 'KYC Verification', to: '/kyc', icon: BadgeCheck },
-  { label: 'Support', to: '/support', icon: LifeBuoy },
+  { label: 'Live Chat', to: '/support', icon: LifeBuoy },
   { label: 'Settings', to: '/settings', icon: Settings },
 ]
 

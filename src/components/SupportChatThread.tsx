@@ -225,8 +225,8 @@ export default function SupportChatThread({
   }
 
   return (
-    <div className="flex h-[400px] flex-col sm:h-[500px]">
-      <div className="flex-1 space-y-3 overflow-y-auto px-1 py-2">
+    <div className="flex h-[520px] flex-col sm:h-[600px] lg:h-[680px]">
+      <div className="flex-1 space-y-4 overflow-y-auto rounded-md bg-background/40 px-3 py-4 sm:px-4">
         {loading ? (
           <p className="mt-8 text-center text-sm text-text-muted">Loading conversation…</p>
         ) : messages.length === 0 ? (
@@ -250,13 +250,20 @@ export default function SupportChatThread({
             return (
               <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+                  className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm sm:max-w-[65%] ${
                     isMine ? 'bg-accent-gold-soft' : 'bg-surface-alt'
                   }`}
                 >
-                  <p className="text-[10px] uppercase tracking-wide text-text-muted">
-                    {isSystem ? 'SmartTradePro Support' : isMine ? 'You' : otherPartyLabel}
-                  </p>
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                      {isSystem ? 'SmartTradePro Live Chat' : isMine ? 'You' : otherPartyLabel}
+                    </p>
+                    {message.timestamp && (
+                      <p className="flex-none text-[10px] text-text-muted">
+                        {message.timestamp.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}
+                      </p>
+                    )}
+                  </div>
                   {hasImage && (
                     <div className="mt-1.5">
                       {imageBroken ? (
@@ -285,12 +292,7 @@ export default function SupportChatThread({
                       )}
                     </div>
                   )}
-                  {message.text && <p className="mt-1 whitespace-pre-wrap text-text-primary">{message.text}</p>}
-                  {message.timestamp && (
-                    <p className="mt-1 text-[10px] text-text-muted">
-                      {message.timestamp.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}
-                    </p>
-                  )}
+                  {message.text && <p className="mt-1.5 whitespace-pre-wrap text-text-primary">{message.text}</p>}
                 </div>
               </div>
             )
@@ -299,62 +301,67 @@ export default function SupportChatThread({
         <div ref={bottomRef} />
       </div>
 
-      {selectedImage && (
-        <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-surface-alt px-2.5 py-2">
-          {imagePreviewUrl && (
-            <img src={imagePreviewUrl} alt="" className="h-10 w-10 flex-none rounded object-cover" />
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-medium text-text-primary">{selectedImage.name}</p>
-            <p className="text-[11px] text-text-muted">{formatFileSize(selectedImage.size)}</p>
+      {/* Composer — its own bordered panel (rather than a plain top divider)
+          so it reads as a distinct "type here" bar, the way a real live-chat
+          widget separates the message log from the input area. */}
+      <div className="mt-3 rounded-lg border border-border bg-surface-alt/30 p-2.5">
+        {selectedImage && (
+          <div className="mb-2 flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-2">
+            {imagePreviewUrl && (
+              <img src={imagePreviewUrl} alt="" className="h-10 w-10 flex-none rounded object-cover" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-text-primary">{selectedImage.name}</p>
+              <p className="text-[11px] text-text-muted">{formatFileSize(selectedImage.size)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleRemoveImage}
+              disabled={sending}
+              className="flex-none rounded p-1 text-text-muted transition-colors hover:bg-surface-alt hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Remove selected image"
+            >
+              <X size={14} />
+            </button>
           </div>
+        )}
+
+        <form onSubmit={handleSend} className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={SUPPORT_CHAT_IMAGE_ACCEPT.join(',')}
+            onChange={handleFileChange}
+            className="hidden"
+          />
           <button
             type="button"
-            onClick={handleRemoveImage}
+            onClick={() => fileInputRef.current?.click()}
             disabled={sending}
-            className="flex-none rounded p-1 text-text-muted transition-colors hover:bg-surface hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Remove selected image"
+            className="flex-none rounded-md border border-border bg-surface p-2.5 text-text-muted transition-colors hover:border-accent-gold hover:text-accent-gold disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Attach an image"
+            title="Attach an image"
           >
-            <X size={14} />
+            <ImagePlus size={16} />
           </button>
-        </div>
-      )}
-
-      <form onSubmit={handleSend} className="mt-2 flex items-end gap-2 border-t border-border pt-3">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={SUPPORT_CHAT_IMAGE_ACCEPT.join(',')}
-          onChange={handleFileChange}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={sending}
-          className="flex-none rounded-md border border-border p-2.5 text-text-muted transition-colors hover:border-accent-gold hover:text-accent-gold disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label="Attach an image"
-          title="Attach an image"
-        >
-          <ImagePlus size={16} />
-        </button>
-        <textarea
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={2}
-          placeholder="Type a message…"
-          className="flex-1 resize-none rounded-md border border-border bg-surface-alt px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent-gold focus:outline-none focus:ring-1 focus:ring-accent-gold"
-        />
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={sending || (!input.trim() && !selectedImage)}
-          className="flex flex-none items-center gap-1.5"
-        >
-          <Send size={14} /> {sending ? (selectedImage ? 'Uploading…' : 'Sending…') : 'Send'}
-        </Button>
-      </form>
+          <textarea
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={2}
+            placeholder="Type a message…"
+            className="flex-1 resize-none rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent-gold focus:outline-none focus:ring-1 focus:ring-accent-gold"
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={sending || (!input.trim() && !selectedImage)}
+            className="flex flex-none items-center gap-1.5"
+          >
+            <Send size={14} /> {sending ? (selectedImage ? 'Uploading…' : 'Sending…') : 'Send'}
+          </Button>
+        </form>
+      </div>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
 
       {lightboxUrl && (

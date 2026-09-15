@@ -113,7 +113,7 @@ export default function Trade() {
   if (accountLoading) disabledReason = 'Loading your account…'
   else if (!priceKnown) disabledReason = 'Waiting for a live price…'
   else if (!(total > 0)) disabledReason = 'Enter an amount to trade.'
-  else if (total > balance) disabledReason = 'Insufficient virtual cash for this trade.'
+  else if (total > balance) disabledReason = 'Insufficient available balance for this trade.'
 
   async function handleExecute() {
     if (!user || disabledReason) return
