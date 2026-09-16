@@ -57,6 +57,7 @@ export const KYC_DOC_TYPE_LABELS: Record<KycDocumentType, string> = {
   idCardBack: 'ID/PAN Card — Back',
   drivingLicenseFront: 'Driving License — Front',
   drivingLicenseBack: 'Driving License — Back',
+  photo: 'Upload Photo',
 }
 
 export class KycError extends Error {}
@@ -110,9 +111,10 @@ export function validateKycFile(file: File): string | null {
 export interface KycSubmissionFiles {
   idCardFront: File
   idCardBack: File
-  // Driving License is optional — only the ID/PAN Card is required.
+  // Driving License is optional — only the ID/PAN Card and photo are required.
   drivingLicenseFront?: File
   drivingLicenseBack?: File
+  photo: File
 }
 
 /** e.g. "photo.jpg" -> "jpg"; falls back to a mime-type-derived guess if the filename has no extension. */
@@ -169,8 +171,9 @@ async function uploadOneFile(
  * same way this app already handles "don't let a double-click submit
  * twice" elsewhere.
  */
-// Only the ID/PAN Card is required — Driving License is optional.
-const KYC_REQUIRED_DOC_TYPES: KycDocumentType[] = ['idCardFront', 'idCardBack']
+// The ID/PAN Card and the verification photo are required — Driving
+// License is optional.
+const KYC_REQUIRED_DOC_TYPES: KycDocumentType[] = ['idCardFront', 'idCardBack', 'photo']
 const KYC_OPTIONAL_DOC_TYPES: KycDocumentType[] = ['drivingLicenseFront', 'drivingLicenseBack']
 
 // Dev-only, stage-tagged tracing for the submit pipeline. Never logs file
@@ -234,6 +237,7 @@ export async function submitKycVerification(
       idCardBack: uploaded.idCardBack,
       drivingLicenseFront: uploaded.drivingLicenseFront ?? null,
       drivingLicenseBack: uploaded.drivingLicenseBack ?? null,
+      photo: uploaded.photo,
       submittedAt: serverTimestamp(),
       reviewedAt: null,
       reviewedBy: null,

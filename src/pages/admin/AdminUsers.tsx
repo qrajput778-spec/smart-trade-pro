@@ -11,7 +11,7 @@ import { useMarketData } from '../../context/MarketDataContext'
 import { db } from '../../lib/firebase'
 import { formatUsd } from '../../lib/constants'
 import { summarizeHoldings } from '../../lib/portfolioMath'
-import { removeUserAccount, AdminActionError } from '../../lib/admin'
+import { removeUserAccount, AdminActionError, RemoveUserPartialError } from '../../lib/admin'
 import type { HoldingsMap } from '../../types'
 
 interface AdminUserRow {
@@ -63,10 +63,25 @@ export default function AdminUsers() {
     setRemoving(true)
     try {
       await removeUserAccount(adminUser.uid, adminUser.email, removeTarget.uid, removeReason)
+      // Only reached once Firebase Auth deletion AND every piece of this
+      // account's Firestore/Storage data have actually been removed — see
+      // src/lib/admin.ts's removeUserAccount. Never shown for a run that
+      // only got partway (that throws RemoveUserPartialError below instead,
+      // which deliberately keeps the row and the dialog open so the reason
+      // typed in survives a retry click).
       setRows((prev) => prev.filter((row) => row.uid !== removeTarget.uid))
       closeRemoveDialog()
     } catch (err) {
-      setRemoveError(err instanceof AdminActionError ? err.message : 'Could not remove this account — please try again.')
+      if (err instanceof RemoveUserPartialError) {
+        // The Auth account is already gone — this person can no longer sign
+        // in — but some of their data cleanup failed partway. Keep the row
+        // and the dialog open (with the reason still filled in) so Remove
+        // can just be clicked again; every step it retries is a no-op for
+        // whatever already succeeded.
+        setRemoveError(err.message)
+      } else {
+        setRemoveError(err instanceof AdminActionError ? err.message : 'Could not remove this account — please try again.')
+      }
     } finally {
       setRemoving(false)
     }
@@ -232,10 +247,10 @@ export default function AdminUsers() {
               <h3 className="text-lg font-semibold text-text-primary">Remove {removeTarget.displayName}</h3>
             </div>
             <p className="mt-2 text-sm text-text-muted">
-              This permanently deletes {removeTarget.email}'s account, balance, holdings,
-              and full trade/support history from Smart Trade Pro. This cannot be undone. It does
-              not revoke their Firebase sign-in credentials — that would need to be done separately
-              in the Firebase console.
+              This permanently deletes {removeTarget.email}'s account: their Firebase sign-in
+              credentials (they will no longer be able to log in at all), balance, holdings, trade
+              and portfolio history, KYC submissions, deposit/withdrawal requests, and support
+              chat — including their uploaded files. This cannot be undone.
             </p>
 
             <div className="mt-4 space-y-3">

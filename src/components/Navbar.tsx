@@ -11,7 +11,7 @@ const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
   }`
 
 export default function Navbar() {
-  const { user, loading } = useAuth()
+  const { user, loading, emailVerified } = useAuth()
   const navigate = useNavigate()
 
   async function handleLogout() {
@@ -28,7 +28,7 @@ export default function Navbar() {
         SMART TRADE <span className="text-accent-gold">PRO</span>
       </Link>
       <div className="flex flex-wrap items-center gap-1">
-        {loading ? null : user ? (
+        {loading ? null : user && emailVerified ? (
           <>
             <NavLink to="/dashboard" className={navLinkClasses}>
               <LayoutDashboard size={16} /> <span className="hidden sm:inline">Dashboard</span>
@@ -52,6 +52,19 @@ export default function Navbar() {
               </button>
             </div>
           </>
+        ) : user ? (
+          // Signed in but not verified yet (on /verify-email) — no
+          // dashboard links to a section this account can't reach yet, just
+          // a way out.
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="hidden text-sm text-text-muted md:inline">{displayLabel}</span>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-text-muted transition-colors hover:text-danger"
+            >
+              <LogOut size={16} /> <span className="hidden sm:inline">Sign out</span>
+            </button>
+          </div>
         ) : (
           <>
             <Link

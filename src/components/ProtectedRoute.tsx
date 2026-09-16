@@ -3,12 +3,19 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 /**
- * Gates a route behind Firebase auth state. Renders a centered spinner while
- * auth state is still resolving so we never flash a login redirect for a
- * user who is actually signed in.
+ * Gates a route behind Firebase auth state AND a verified email. Renders a
+ * centered spinner while auth state is still resolving so we never flash a
+ * login redirect for a user who is actually signed in.
+ *
+ * `emailVerified` comes straight from Firebase Auth's own ID token (see
+ * AuthContext) — never a Firestore field a client could otherwise write
+ * directly — so an unverified account is sent to /verify-email instead of
+ * whatever protected page it tried to reach, including via a directly typed
+ * URL (this check runs on every render of every route wrapped in
+ * ProtectedRoute, not just after a fresh login).
  */
 export default function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, loading, emailVerified } = useAuth()
 
   if (loading) {
     return (
@@ -24,6 +31,10 @@ export default function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (!user) {
     return <Navigate to="/login" replace />
+  }
+
+  if (!emailVerified) {
+    return <Navigate to="/verify-email" replace />
   }
 
   return <>{children}</>

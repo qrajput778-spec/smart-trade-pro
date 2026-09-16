@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import {
+  Camera,
   Car,
   CheckCircle2,
   Clock,
@@ -39,6 +40,7 @@ interface SubmissionRow {
   idCardBack: KycDocumentInfo | null
   drivingLicenseFront: KycDocumentInfo | null
   drivingLicenseBack: KycDocumentInfo | null
+  photo: KycDocumentInfo | null
 }
 
 const ID_ACCEPT = KYC_ID_DOC_ACCEPT.join(',')
@@ -55,6 +57,7 @@ const REQUIRED_DOC_TYPES: KycDocumentType[] = [
   'idCardBack',
   'drivingLicenseFront',
   'drivingLicenseBack',
+  'photo',
 ]
 
 function submittedDocList(row: SubmissionRow): string {
@@ -73,6 +76,7 @@ export default function Kyc() {
   const [idCardBack, setIdCardBack] = useState<File | null>(null)
   const [drivingLicenseFront, setDrivingLicenseFront] = useState<File | null>(null)
   const [drivingLicenseBack, setDrivingLicenseBack] = useState<File | null>(null)
+  const [photo, setPhoto] = useState<File | null>(null)
 
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<KycDocumentType, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -108,6 +112,7 @@ export default function Kyc() {
             idCardBack: data.idCardBack ?? null,
             drivingLicenseFront: data.drivingLicenseFront ?? null,
             drivingLicenseBack: data.drivingLicenseBack ?? null,
+            photo: data.photo ?? null,
           }
         })
         rows.sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0))
@@ -130,6 +135,7 @@ export default function Kyc() {
     idCardBack: setIdCardBack,
     drivingLicenseFront: setDrivingLicenseFront,
     drivingLicenseBack: setDrivingLicenseBack,
+    photo: setPhoto,
   }
 
   function handleFileSelect(docType: KycDocumentType, file: File | null) {
@@ -151,12 +157,16 @@ export default function Kyc() {
       setFormError('Upload both sides of your ID Card / PAN Card.')
       return
     }
+    if (!photo) {
+      setFormError('Upload your verification photo.')
+      return
+    }
     setConfirmChecked(false)
     setConfirmOpen(true)
   }
 
   async function handleConfirmSubmit() {
-    if (!user || !confirmChecked || !idCardFront || !idCardBack) return
+    if (!user || !confirmChecked || !idCardFront || !idCardBack || !photo) return
     setSubmitting(true)
     setFormError(null)
     setProgress({})
@@ -169,6 +179,7 @@ export default function Kyc() {
           idCardBack,
           drivingLicenseFront: drivingLicenseFront ?? undefined,
           drivingLicenseBack: drivingLicenseBack ?? undefined,
+          photo,
         },
         (docType, percent) => setProgress((prev) => ({ ...prev, [docType]: percent })),
       )
@@ -177,6 +188,7 @@ export default function Kyc() {
       setIdCardBack(null)
       setDrivingLicenseFront(null)
       setDrivingLicenseBack(null)
+      setPhoto(null)
       setProgress({})
       setSuccessMessage('Your documents have been submitted successfully and are awaiting review.')
     } catch (err) {
@@ -211,10 +223,12 @@ export default function Kyc() {
               ? idCardBack
               : docType === 'drivingLicenseFront'
                 ? drivingLicenseFront
-                : drivingLicenseBack
+                : docType === 'drivingLicenseBack'
+                  ? drivingLicenseBack
+                  : photo
         return file && { label: KYC_DOC_TYPE_LABELS[docType], file }
       }).filter((x): x is { label: string; file: File } => Boolean(x)),
-    [idCardFront, idCardBack, drivingLicenseFront, drivingLicenseBack],
+    [idCardFront, idCardBack, drivingLicenseFront, drivingLicenseBack, photo],
   )
 
   if (loading) {
@@ -323,7 +337,8 @@ export default function Kyc() {
           <h2 className="text-lg font-semibold text-text-primary">Upload Documents</h2>
           <p className="mt-1 text-xs text-text-muted">
             Required: your <strong className="font-medium text-text-primary">ID Card / PAN Card</strong> — both
-            sides. Your <strong className="font-medium text-text-primary">Driving License</strong> is optional. This
+            sides — and a <strong className="font-medium text-text-primary">verification photo</strong>. Your{' '}
+            <strong className="font-medium text-text-primary">Driving License</strong> is optional. This
             uses an in-platform review workflow. To protect your privacy, upload only approved document images — never
             original government ID documents.
           </p>
@@ -372,6 +387,17 @@ export default function Kyc() {
               error={fieldErrors.drivingLicenseBack ?? null}
               progress={progress.drivingLicenseBack ?? null}
               badge="Optional"
+            />
+            <KycDocumentCard
+              title="Upload Photo"
+              description="A clear photo of yourself for verification."
+              icon={Camera}
+              accept={ID_ACCEPT}
+              file={photo}
+              onFileSelect={(f) => handleFileSelect('photo', f)}
+              error={fieldErrors.photo ?? null}
+              progress={progress.photo ?? null}
+              badge="Required"
             />
           </div>
 

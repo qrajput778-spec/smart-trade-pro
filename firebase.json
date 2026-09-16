@@ -8,6 +8,20 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ],
   "hosting": {
     "site": "smart-trade-pro-98243",
     "public": "dist",

@@ -18,6 +18,7 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app'
 import { getAuth, type Auth } from 'firebase/auth'
 import { getFirestore, type Firestore } from 'firebase/firestore'
+import { getFunctions, type Functions } from 'firebase/functions'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -32,11 +33,18 @@ const isConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId)
 let app: FirebaseApp | null = null
 let auth: Auth | null = null
 let db: Firestore | null = null
+// Callable Cloud Functions client — see functions/src/index.ts. Only ever
+// used for the one thing the frontend structurally cannot do itself:
+// deleteUserAuthAccount, called from src/lib/admin.ts's removeUserAccount.
+// No region is passed, matching functions/src/index.ts's default deploy
+// region (us-central1) — the SDK's own default.
+let functionsClient: Functions | null = null
 
 if (isConfigured) {
   app = initializeApp(firebaseConfig)
   auth = getAuth(app)
   db = getFirestore(app)
+  functionsClient = getFunctions(app)
 } else {
   // eslint-disable-next-line no-console
   console.warn(
@@ -45,5 +53,5 @@ if (isConfigured) {
   )
 }
 
-export { auth, db }
+export { auth, db, functionsClient as functions }
 export default app

@@ -570,8 +570,14 @@ service cloud.firestore {
           .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'adminNote']) &&
         request.resource.data.reviewedBy == request.auth.uid;
 
-      // Permanent record either way — nobody deletes a request, admins included.
-      allow delete: if false;
+      // Normally permanent — nobody deletes a request, including the owner
+      // or an admin acting day-to-day. The one deliberate exception: an
+      // admin's "Remove User" full account deletion (src/lib/admin.ts's
+      // removeUserAccount) is a genuine, explicit right-to-erasure-style
+      // wipe of everything that account owns, so it needs to remove this
+      // user's own past requests too — but never another admin's, same
+      // protection every other admin-initiated delete in this file uses.
+      allow delete: if isAdmin() && !isAdminAccount(resource.data.userId);
     }
 
     // KYC verification workflow (src/lib/kyc.ts) — a SIMULATED identity
@@ -611,8 +617,13 @@ service cloud.firestore {
           .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'rejectionReason', 'updatedAt']) &&
         request.resource.data.reviewedBy == request.auth.uid;
 
-      // Permanent record either way — nobody deletes a submission, admins included.
-      allow delete: if false;
+      // Normally permanent — nobody deletes a submission day-to-day, owner
+      // or admin. The one deliberate exception, same as balanceRequests
+      // above: an admin's "Remove User" full account deletion needs to
+      // remove this user's own KYC history (and the private Supabase files
+      // it points to — see src/lib/admin.ts) as part of a genuine complete
+      // wipe, never another admin's.
+      allow delete: if isAdmin() && !isAdminAccount(resource.data.userId);
     }
 
     // Collection-group read for the admin dashboard/trade feed

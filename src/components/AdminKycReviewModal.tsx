@@ -30,6 +30,7 @@ interface SubmissionForReview {
   idCardBack: KycDocumentInfo | null
   drivingLicenseFront: KycDocumentInfo | null
   drivingLicenseBack: KycDocumentInfo | null
+  photo: KycDocumentInfo | null
 }
 
 interface AdminKycReviewModalProps {
@@ -40,7 +41,7 @@ interface AdminKycReviewModalProps {
   onClose: () => void
 }
 
-const DOC_ORDER: KycDocumentType[] = ['idCardFront', 'idCardBack', 'drivingLicenseFront', 'drivingLicenseBack']
+const DOC_ORDER: KycDocumentType[] = ['idCardFront', 'idCardBack', 'drivingLicenseFront', 'drivingLicenseBack', 'photo']
 
 function isPdf(fileName: string) {
   return fileName.toLowerCase().endsWith('.pdf')

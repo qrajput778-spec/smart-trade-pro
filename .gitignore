@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Compiled Cloud Functions output (functions/src -> functions/lib) — see
+# functions/package.json's own "build" script.
+functions/lib
+
 # Environment variables (Firebase keys, etc.)
 .env
 .env.*

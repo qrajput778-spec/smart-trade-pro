@@ -22,6 +22,7 @@ interface SubmissionRow {
   idCardBack: KycDocumentInfo | null
   drivingLicenseFront: KycDocumentInfo | null
   drivingLicenseBack: KycDocumentInfo | null
+  photo: KycDocumentInfo | null
 }
 
 interface UserInfo {
@@ -32,7 +33,7 @@ type StatusFilter = 'all' | KycStatus
 
 const STATUS_FILTERS: StatusFilter[] = ['all', 'pending', 'verified', 'rejected']
 
-const DOC_TYPES: KycDocumentType[] = ['idCardFront', 'idCardBack', 'drivingLicenseFront', 'drivingLicenseBack']
+const DOC_TYPES: KycDocumentType[] = ['idCardFront', 'idCardBack', 'drivingLicenseFront', 'drivingLicenseBack', 'photo']
 
 function docTypesFor(row: SubmissionRow): string {
   const types = DOC_TYPES.filter((t) => row[t]?.uploaded)
@@ -97,6 +98,7 @@ export default function AdminKyc() {
             idCardBack: data.idCardBack ?? null,
             drivingLicenseFront: data.drivingLicenseFront ?? null,
             drivingLicenseBack: data.drivingLicenseBack ?? null,
+            photo: data.photo ?? null,
           }
         })
         allRows.sort((a, b) => (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0))

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '../lib/firebase'
+import { useAuth } from '../context/AuthContext'
 import { getAuthErrorMessage } from '../lib/authErrors'
 import Card from '../components/Card'
 import Button from '../components/Button'
@@ -19,6 +20,7 @@ type ResetState = 'idle' | 'sending' | 'sent'
 
 export default function Login() {
   const navigate = useNavigate()
+  const { refreshEmailVerification } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
@@ -45,7 +47,14 @@ export default function Login() {
     setSubmitting(true)
     try {
       await signInWithEmailAndPassword(auth, email, password)
-      navigate('/dashboard')
+      // Never trust the emailVerified value carried over from before this
+      // sign-in — reload from the server (via the same AuthContext helper
+      // ProtectedRoute/VerifyEmail read from, so its state stays in sync
+      // immediately rather than waiting on the next onAuthStateChanged
+      // event) so a verification link clicked in another tab/device since
+      // the last sign-in is picked up here too.
+      const verified = await refreshEmailVerification()
+      navigate(verified ? '/dashboard' : '/verify-email')
     } catch (err) {
       setErrors({ form: getAuthErrorMessage(err) })
     } finally {

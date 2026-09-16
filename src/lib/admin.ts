@@ -13,14 +13,18 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
   type CollectionReference,
   type Firestore,
 } from 'firebase/firestore'
-import { db } from './firebase'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from './firebase'
+import { isSupabaseConfigured, supabase } from './supabase'
 import { roundUsd } from './trading'
 import type { TradeOutcomeMode } from '../types'
 
@@ -137,47 +141,149 @@ export async function setGlobalTradeOutcomeMode(
 }
 
 // ---------------------------------------------------------------------------
-// Remove User — AdminUserDetail's Danger Zone.
+// Remove User — AdminUserDetail's / AdminUsers' Danger Zone.
+//
+// A COMPLETE, permanent deletion has two halves that run in a deliberate
+// order — Auth first, then data — because they fail differently:
+//
+//   1. The Firebase Authentication account. A signed-in client — even an
+//      admin's — cannot delete a DIFFERENT user's Auth credentials itself;
+//      only the Admin SDK can, and that must run on a trusted server. This
+//      calls the deleteUserAuthAccount Cloud Function (functions/src/index.ts)
+//      for exactly that. If this step fails, NOTHING else runs — no
+//      Firestore or Storage data is touched — so a failure here can never
+//      leave the account able to log in AND missing its own history at the
+//      same time.
+//   2. Every Firestore document and Supabase Storage file this account
+//      owns. Only attempted once step 1 has actually succeeded, so
+//      "success" is never reported for a run that only wiped local data —
+//      see removeUserAccount's return value and the RemoveUserPartialError
+//      it throws if this half fails partway.
+//
+// Both halves are safe to retry: deleteUserAuthAccount treats an
+// already-deleted target as success (see its own comment), and every
+// Firestore/Storage delete below is naturally idempotent — deleting an
+// already-gone document or object is a no-op, not an error.
 // ---------------------------------------------------------------------------
 
 const USER_SUBCOLLECTIONS_TO_DELETE = ['transactions', 'portfolioSnapshots', 'timedTrades'] as const
 const DELETE_BATCH_SIZE = 500 // Firestore's per-batch write cap.
 
+// The exact KycDocumentInfo-shaped fields src/lib/kyc.ts's kycSubmissions
+// docs use — duplicated here rather than imported to keep this file from
+// depending on KYC's internal doc-type list; every one of these MUST match
+// src/types/index.ts's KycSubmissionDoc for storage cleanup to be complete.
+const KYC_DOC_FIELDS = ['idCardFront', 'idCardBack', 'drivingLicenseFront', 'drivingLicenseBack', 'photo'] as const
+
 export interface RemoveUserResult {
   targetEmail: string
+  /** Counts for the confirmation message — never sensitive, just tallies. */
+  deletedCounts: {
+    transactions: number
+    portfolioSnapshots: number
+    timedTrades: number
+    supportMessages: number
+    kycSubmissions: number
+    balanceRequests: number
+  }
 }
 
-async function deleteCollectionInBatches(firestore: Firestore, collectionRef: CollectionReference) {
+/** Thrown ONLY when the Auth account was already successfully deleted but the data cleanup afterward failed partway. Never a plain AdminActionError — the caller must not treat this as a normal, retry-from-scratch failure. */
+export class RemoveUserPartialError extends AdminActionError {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RemoveUserPartialError'
+  }
+}
+
+async function deleteCollectionInBatches(firestore: Firestore, collectionRef: CollectionReference): Promise<number> {
   const snapshot = await getDocs(collectionRef)
   for (let i = 0; i < snapshot.docs.length; i += DELETE_BATCH_SIZE) {
     const batch = writeBatch(firestore)
     snapshot.docs.slice(i, i + DELETE_BATCH_SIZE).forEach((docSnapshot) => batch.delete(docSnapshot.ref))
     await batch.commit()
   }
+  return snapshot.docs.length
+}
+
+/** Every non-null storagePath across a kycSubmissions doc's document fields — exact stored paths, never a guessed or reconstructed one. */
+function collectKycStoragePaths(data: Record<string, unknown>): string[] {
+  const paths: string[] = []
+  for (const field of KYC_DOC_FIELDS) {
+    const info = data[field]
+    if (info && typeof info === 'object' && 'storagePath' in info && typeof info.storagePath === 'string') {
+      paths.push(info.storagePath)
+    }
+  }
+  return paths
+}
+
+// Maps deleteUserAuthAccount's possible failure codes to a plain-language
+// message — same reasoning as src/lib/authErrors.ts: never show raw
+// "Firebase: ..." or bare Functions error codes to an admin. `failed-precondition`
+// and `permission-denied` already carry the Cloud Function's own specific,
+// user-safe message (see functions/src/index.ts) via `err.message`, so those
+// pass it straight through instead of a generic one.
+function getRemoveUserFunctionErrorMessage(code: string | null, err: unknown): string {
+  const rawMessage =
+    typeof err === 'object' && err !== null && 'message' in err && typeof (err as { message: unknown }).message === 'string'
+      ? (err as { message: string }).message
+      : null
+
+  switch (code) {
+    case 'functions/not-found':
+      return 'The account-deletion server function is not deployed yet — see functions/README.md, then try again.'
+    case 'functions/unavailable':
+    case 'functions/deadline-exceeded':
+      return 'Could not reach the account-deletion server function — check your connection and try again.'
+    case 'functions/permission-denied':
+    case 'functions/unauthenticated':
+      return rawMessage ?? 'You are not authorized to perform this action.'
+    case 'functions/failed-precondition':
+      return rawMessage ?? 'This account cannot be removed from here.'
+    default:
+      return rawMessage ?? 'Could not delete the Firebase Authentication account — nothing was removed. Please try again.'
+  }
+}
+
+/** Best-effort Supabase Storage removal — logs and swallows failures so a Storage hiccup never blocks the Firestore cleanup that follows it. Never throws. */
+async function removeStorageFiles(bucket: string, paths: string[]): Promise<void> {
+  if (paths.length === 0) return
+  try {
+    if (!isSupabaseConfigured || !supabase) return
+    const { error } = await supabase.storage.from(bucket).remove(paths)
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('[admin] Supabase file removal failed', { bucket, count: paths.length, message: error.message })
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[admin] Supabase file removal threw', { bucket, count: paths.length, err })
+  }
 }
 
 /**
- * Permanently removes a user's Smart Trade Pro account: their profile doc,
- * every document in its transactions/portfolioSnapshots/timedTrades
- * subcollections, and their support chat thread — mirrors the owner's own
- * Settings > Delete Account flow (src/lib/account.ts's deleteAccount),
- * extended to also clean up the timedTrades and supportChat data that
- * didn't exist yet when that one was written.
+ * Permanently removes a user's ENTIRE Smart Trade Pro account:
+ *
+ *  1. Their Firebase Authentication account (via the deleteUserAuthAccount
+ *     Cloud Function — see the section comment above) — done FIRST and
+ *     required to succeed before anything else runs, so this account can
+ *     never sign in again by the time any of their data is touched.
+ *  2. Their Firestore profile doc, transactions/portfolioSnapshots/
+ *     timedTrades subcollections, support chat thread + messages, every
+ *     kycSubmissions doc naming them, and every balanceRequests doc naming
+ *     them.
+ *  3. Their private files in Supabase Storage: every KYC document these
+ *     submissions pointed at, and every image attachment their support
+ *     messages pointed at — always by the exact storagePath/imagePath
+ *     already stored on that document, never a guessed path, and always
+ *     scoped to files this specific user's own records named.
  *
  * Refuses to run against another admin account or the caller's own account
  * (an admin removes themselves via Settings like everyone else, not here) —
- * firestore.rules enforces the "never another admin" half of that
- * server-side too, so this check is defense-in-depth, not the only guard.
- *
- * IMPORTANT LIMITATION: this can only ever delete Firestore data. There is
- * no client-side way for one signed-in user — even an admin — to delete a
- * DIFFERENT user's Firebase Authentication credentials; that requires the
- * Admin SDK running on a trusted server (e.g. a Cloud Function), which this
- * project has no backend for. If the removed person signs in again
- * afterward, Firebase Auth will still accept their credentials, but the app
- * will find no profile document for them and will not function — which is
- * the accepted tradeoff here, short of also revoking the account by hand in
- * the Firebase console.
+ * both the Cloud Function and firestore.rules enforce the "never another
+ * admin" half of that server-side too, so these client-side checks are
+ * defense-in-depth (a fast, friendly error), never the only guard.
  */
 export async function removeUserAccount(
   adminUid: string,
@@ -206,31 +312,129 @@ export async function removeUserAccount(
   }
   const targetEmail = typeof targetData.email === 'string' ? targetData.email : '—'
 
-  for (const subcollectionName of USER_SUBCOLLECTIONS_TO_DELETE) {
-    await deleteCollectionInBatches(firestore, collection(targetRef, subcollectionName))
+  // ---- Step 1: Firebase Authentication — must succeed before anything
+  // below runs. Nothing is deleted yet if this throws. ----
+  if (!functions) {
+    throw new AdminActionError(
+      'The account-deletion server function is not configured yet — deploy functions/ (see its README) before removing users.',
+    )
+  }
+  try {
+    await httpsCallable<{ targetUid: string }, { success: true; alreadyDeleted: boolean }>(
+      functions,
+      'deleteUserAuthAccount',
+    )({ targetUid })
+  } catch (err) {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : null
+    // eslint-disable-next-line no-console
+    console.error('[admin] deleteUserAuthAccount call failed', { targetUid, code })
+    throw new AdminActionError(getRemoveUserFunctionErrorMessage(code, err))
   }
 
-  // Support chat: the messages subcollection, then the fixed-id thread doc
-  // itself — most users never opened Support, so a missing thread is normal.
-  await deleteCollectionInBatches(firestore, collection(targetRef, 'supportChat', 'thread', 'messages'))
-  await deleteDoc(doc(targetRef, 'supportChat', 'thread')).catch(() => {
-    // No thread ever existed for this user.
-  })
+  // ---- Step 2 onward: the Auth account is confirmed gone. From here, any
+  // failure is reported as a PARTIAL removal, never a plain retry-from-
+  // scratch failure — the user can no longer log in either way. ----
+  try {
+    const deletedCounts = {
+      transactions: 0,
+      portfolioSnapshots: 0,
+      timedTrades: 0,
+      supportMessages: 0,
+      kycSubmissions: 0,
+      balanceRequests: 0,
+    }
 
-  await deleteDoc(targetRef)
+    for (const subcollectionName of USER_SUBCOLLECTIONS_TO_DELETE) {
+      const count = await deleteCollectionInBatches(firestore, collection(targetRef, subcollectionName))
+      deletedCounts[subcollectionName] = count
+    }
 
-  // Logged last, only once the removal actually completed — see
-  // adjustUserBalance above for the same "adminUid must match the caller"
-  // rule this relies on (firestore.rules' adminActions/{actionId}).
-  await addDoc(collection(firestore, 'adminActions'), {
-    adminUid,
-    adminEmail: adminEmail ?? null,
-    targetUid,
-    targetEmail,
-    action: 'REMOVE_USER',
-    reason: trimmedReason,
-    timestamp: serverTimestamp(),
-  })
+    // Support chat: collect each message's image path BEFORE deleting the
+    // messages themselves, remove those files from Storage, then delete the
+    // messages subcollection and the fixed-id thread doc — most users never
+    // opened Support, so a missing thread is normal, not an error.
+    const messagesSnapshot = await getDocs(collection(targetRef, 'supportChat', 'thread', 'messages'))
+    const supportImagePaths = messagesSnapshot.docs
+      .map((docSnapshot) => docSnapshot.data())
+      .filter((data) => data.type === 'image' && typeof data.imagePath === 'string')
+      .map((data) => data.imagePath as string)
+    await removeStorageFiles('support-attachments', supportImagePaths)
+    deletedCounts.supportMessages = await deleteCollectionInBatches(
+      firestore,
+      collection(targetRef, 'supportChat', 'thread', 'messages'),
+    )
+    await deleteDoc(doc(targetRef, 'supportChat', 'thread')).catch(() => {
+      // No thread ever existed for this user.
+    })
 
-  return { targetEmail }
+    // KYC submissions: a top-level collection keyed by userId, not nested
+    // under users/{uid} (see firestore.rules' schema comment) — collect
+    // every stored file path across every submission BEFORE deleting the
+    // docs, remove those files from Storage, then delete the docs.
+    const kycSnapshot = await getDocs(query(collection(firestore, 'kycSubmissions'), where('userId', '==', targetUid)))
+    const kycStoragePaths = kycSnapshot.docs.flatMap((docSnapshot) => collectKycStoragePaths(docSnapshot.data()))
+    await removeStorageFiles('kyc-documents', kycStoragePaths)
+    if (kycSnapshot.docs.length > 0) {
+      for (let i = 0; i < kycSnapshot.docs.length; i += DELETE_BATCH_SIZE) {
+        const batch = writeBatch(firestore)
+        kycSnapshot.docs.slice(i, i + DELETE_BATCH_SIZE).forEach((docSnapshot) => batch.delete(docSnapshot.ref))
+        await batch.commit()
+      }
+    }
+    deletedCounts.kycSubmissions = kycSnapshot.docs.length
+
+    // Deposit/withdrawal requests: also top-level, keyed by userId. No
+    // Storage files of their own to remove.
+    const balanceRequestsSnapshot = await getDocs(
+      query(collection(firestore, 'balanceRequests'), where('userId', '==', targetUid)),
+    )
+    if (balanceRequestsSnapshot.docs.length > 0) {
+      for (let i = 0; i < balanceRequestsSnapshot.docs.length; i += DELETE_BATCH_SIZE) {
+        const batch = writeBatch(firestore)
+        balanceRequestsSnapshot.docs.slice(i, i + DELETE_BATCH_SIZE).forEach((docSnapshot) => batch.delete(docSnapshot.ref))
+        await batch.commit()
+      }
+    }
+    deletedCounts.balanceRequests = balanceRequestsSnapshot.docs.length
+
+    await deleteDoc(targetRef)
+
+    // Logged last, only once the removal actually completed — see
+    // adjustUserBalance above for the same "adminUid must match the caller"
+    // rule this relies on (firestore.rules' adminActions/{actionId}).
+    // Deliberately non-fatal: by this point the account and every piece of
+    // its data are genuinely, fully gone — a hiccup writing the audit
+    // record afterward must never surface as "partial removal, please
+    // retry" (retrying would just fail with "Target account not found",
+    // confusingly, since there's truly nothing left to clean up).
+    try {
+      await addDoc(collection(firestore, 'adminActions'), {
+        adminUid,
+        adminEmail: adminEmail ?? null,
+        targetUid,
+        targetEmail,
+        action: 'REMOVE_USER',
+        reason: trimmedReason,
+        timestamp: serverTimestamp(),
+      })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[admin] removeUserAccount: succeeded but the adminActions log write failed', {
+        targetUid,
+        message: err instanceof Error ? err.message : String(err),
+      })
+    }
+
+    return { targetEmail, deletedCounts }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[admin] removeUserAccount: data cleanup failed after Auth deletion succeeded', {
+      targetUid,
+      message: err instanceof Error ? err.message : String(err),
+    })
+    throw new RemoveUserPartialError(
+      `${targetEmail}'s sign-in has been permanently revoked, but cleaning up their remaining data failed partway ` +
+        'through. It is safe to run Remove again — already-deleted records are simply skipped — to finish the cleanup.',
+    )
+  }
 }

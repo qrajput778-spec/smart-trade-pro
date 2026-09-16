@@ -1,17 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
-import { signOut } from 'firebase/auth'
-import { AlertTriangle, CheckCircle2, Moon, Sun } from 'lucide-react'
+import { CheckCircle2, Moon, Sun } from 'lucide-react'
 import Card from '../components/Card'
 import Button from '../components/Button'
 import TextField from '../components/TextField'
 import PageContainer from '../components/PageContainer'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import { auth, db } from '../lib/firebase'
+import { db } from '../lib/firebase'
 import { getAuthErrorMessage } from '../lib/authErrors'
-import { updateDisplayName, changePassword, deleteAccount, AccountError } from '../lib/account'
+import { updateDisplayName, changePassword, AccountError } from '../lib/account'
 
 interface ProfileDoc {
   displayName: string
@@ -22,7 +20,6 @@ interface ProfileDoc {
 export default function Settings() {
   const { user } = useAuth()
   const { theme, setTheme } = useTheme()
-  const navigate = useNavigate()
 
   const [profile, setProfile] = useState<ProfileDoc | null>(null)
   const [profileLoading, setProfileLoading] = useState(true)
@@ -118,34 +115,6 @@ export default function Settings() {
       setPasswordError(getAuthErrorMessage(err))
     } finally {
       setChangingPassword(false)
-    }
-  }
-
-  // ---- Danger zone: delete account ----
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [deletePassword, setDeletePassword] = useState('')
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
-
-  function closeDeleteDialog() {
-    setDeleteDialogOpen(false)
-    setDeletePassword('')
-    setDeleteConfirmText('')
-    setDeleteError(null)
-  }
-
-  async function handleDeleteAccount() {
-    if (!user || deleteConfirmText !== 'DELETE' || !deletePassword) return
-    setDeleting(true)
-    setDeleteError(null)
-    try {
-      await deleteAccount(user, deletePassword)
-      if (auth) await signOut(auth)
-      navigate('/')
-    } catch (err) {
-      setDeleteError(err instanceof AccountError ? err.message : getAuthErrorMessage(err))
-      setDeleting(false)
     }
   }
 
@@ -290,76 +259,7 @@ export default function Settings() {
             This is saved on this device and also controls the theme icon in the top bar.
           </p>
         </Card>
-
-        {/* Danger zone */}
-        <Card className="border-danger/40">
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={16} className="text-danger" />
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-danger">Danger Zone</h2>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-text-primary">Delete Account</p>
-              <p className="mt-1 text-xs text-text-muted">
-                Permanently deletes your account, balance, holdings, and full trade history.
-              </p>
-            </div>
-            <Button variant="danger" onClick={() => setDeleteDialogOpen(true)} className="flex-none">
-              Delete Account
-            </Button>
-          </div>
-        </Card>
       </div>
-
-      {deleteDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <Card className="w-full max-w-md border-danger/40">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={18} className="text-danger" />
-              <h3 className="text-lg font-semibold text-text-primary">Delete your account</h3>
-            </div>
-            <p className="mt-2 text-sm text-text-muted">
-              This permanently deletes your account, balance, holdings, and full trade
-              history. This cannot be undone.
-            </p>
-
-            <div className="mt-4 space-y-3">
-              <TextField
-                label="Current password"
-                name="deletePassword"
-                type="password"
-                autoComplete="current-password"
-                value={deletePassword}
-                onChange={(event) => setDeletePassword(event.target.value)}
-              />
-              <TextField
-                label={'Type "DELETE" to confirm'}
-                name="deleteConfirm"
-                value={deleteConfirmText}
-                onChange={(event) => setDeleteConfirmText(event.target.value)}
-                placeholder="DELETE"
-              />
-            </div>
-
-            {deleteError && <p className="mt-3 text-xs text-danger">{deleteError}</p>}
-
-            <div className="mt-5 flex justify-end gap-3">
-              <Button variant="secondary" onClick={closeDeleteDialog} disabled={deleting}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={handleDeleteAccount}
-                disabled={deleteConfirmText !== 'DELETE' || !deletePassword || deleting}
-              >
-                {deleting ? 'Deleting…' : 'Permanently Delete Account'}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
     </PageContainer>
   )
 }

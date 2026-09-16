@@ -313,7 +313,7 @@ export interface SupportChatMessageDoc {
   imageContentType?: string
 }
 
-export type KycDocumentType = 'idCardFront' | 'idCardBack' | 'drivingLicenseFront' | 'drivingLicenseBack'
+export type KycDocumentType = 'idCardFront' | 'idCardBack' | 'drivingLicenseFront' | 'drivingLicenseBack' | 'photo'
 export type KycStatus = 'pending' | 'verified' | 'rejected'
 
 /**
@@ -351,12 +351,14 @@ export interface KycSubmissionDoc {
   userId: string
   userEmail: string
   status: KycStatus
-  // The ID/PAN Card (both sides) is required at submission time. Driving
-  // License is optional — its fields are null when not provided.
+  // The ID/PAN Card (both sides) and the verification photo are required at
+  // submission time. Driving License is optional — its fields are null
+  // when not provided.
   idCardFront: KycDocumentInfo
   idCardBack: KycDocumentInfo
   drivingLicenseFront: KycDocumentInfo | null
   drivingLicenseBack: KycDocumentInfo | null
+  photo: KycDocumentInfo
   submittedAt: unknown
   reviewedAt: unknown | null
   reviewedBy: string | null

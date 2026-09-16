@@ -6,8 +6,11 @@ import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 
 // Landing/auth pages keep the simple public navbar; everything else lives
-// inside the authenticated sidebar app shell.
-const PUBLIC_PATHS = new Set(['/', '/login', '/signup'])
+// inside the authenticated sidebar app shell. /verify-email is reached by a
+// signed-in-but-unverified account (see ProtectedRoute/AdminRoute) that
+// shouldn't see the full app sidebar — every link in it just bounces back
+// here anyway — so it gets the same simple treatment as Login/Signup.
+const PUBLIC_PATHS = new Set(['/', '/login', '/signup', '/verify-email'])
 
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation()

@@ -11,6 +11,7 @@ import AdminLayout from './components/admin/AdminLayout'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
+import VerifyEmail from './pages/VerifyEmail'
 import Dashboard from './pages/Dashboard'
 import Markets from './pages/Markets'
 import TradeIndex from './pages/TradeIndex'
@@ -68,6 +69,11 @@ export default function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              {/* Not wrapped in ProtectedRoute — it applies its own
+                  self-contained guard (see VerifyEmail.tsx): signed-out
+                  visitors go to /login, already-verified users go straight
+                  to /dashboard, so this never becomes a dead end. */}
+              <Route path="/verify-email" element={<VerifyEmail />} />
               <Route
                 path="/dashboard"
                 element={

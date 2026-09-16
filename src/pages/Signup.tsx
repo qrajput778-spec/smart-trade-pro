@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
 import { getAuthErrorMessage } from '../lib/authErrors'
@@ -89,7 +89,21 @@ export default function Signup() {
         createdAt: serverTimestamp(),
       })
 
-      navigate('/dashboard')
+      // Best-effort: the account already exists in Firebase Auth by this
+      // point regardless of whether this send succeeds, so a transient
+      // failure here (network blip, rate limit) shouldn't block signup or
+      // strand the user — VerifyEmail.tsx's "Resend verification email"
+      // button covers retrying. Never surfaced as a signup form error.
+      try {
+        await sendEmailVerification(credential.user)
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[signup] could not send verification email', err)
+      }
+
+      // New accounts always start unverified — send them to the
+      // verification-required screen, never straight to the dashboard.
+      navigate('/verify-email')
     } catch (err) {
       setErrors({ form: getAuthErrorMessage(err) })
     } finally {

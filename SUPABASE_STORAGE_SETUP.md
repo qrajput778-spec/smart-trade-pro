@@ -134,9 +134,22 @@ on storage.objects for select
 to anon
 using (bucket_id = 'kyc-documents');
 
--- No delete policy — KYC files are immutable once uploaded (a resubmission
--- creates a new submissionId rather than overwriting), matching the
--- original Firebase Storage rules' `allow delete: if false`.
+-- A submission's own files stay immutable day-to-day — a resubmission
+-- creates a new submissionId rather than overwriting, and there is still no
+-- "edit a past submission" feature anywhere in the app. The one deliberate
+-- exception this delete policy exists for: an admin's "Remove User" full
+-- account deletion (src/lib/admin.ts's removeUserAccount) needs to actually
+-- remove a departing user's private KYC document files, not just their
+-- Firestore records pointing at them — otherwise they'd sit in the bucket
+-- forever with nothing left to reference or clean them up. The delete call
+-- always targets exact, previously-stored storagePath values already on
+-- that user's own kycSubmissions docs — never a guessed or public URL, and
+-- gated client-side to admins by firestore.rules' matching kycSubmissions
+-- delete rule (which itself never allows targeting another admin's docs).
+create policy "kyc_documents_delete"
+on storage.objects for delete
+to anon
+using (bucket_id = 'kyc-documents');
 
 -- ============================================================
 -- support-attachments bucket
