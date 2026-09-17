@@ -68,6 +68,19 @@ these are filled in.
 npm run dev
 ```
 
+## Deployment (Hostinger)
+
+This is a client-side single-page app (React Router's `BrowserRouter`), so
+the web server must serve `index.html` for any URL that isn't a real file —
+otherwise refreshing or directly opening a route like `/dashboard` or
+`/trade/BTC` 404s, even though clicking in-app navigation works fine.
+`public/.htaccess` (copied verbatim into `dist/.htaccess` by `npm run build`,
+since Vite copies everything under `public/` into the build output) is an
+Apache `mod_rewrite` rule that does exactly this on Hostinger's Apache
+hosting. After `npm run build`, upload the entire contents of `dist/`
+(including the hidden `.htaccess` file — make sure your FTP client or file
+manager shows hidden files) to Hostinger's `public_html/`.
+
 ## Project structure
 
 ```
