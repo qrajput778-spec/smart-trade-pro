@@ -388,17 +388,21 @@ service cloud.firestore {
     match /users/{uid} {
       // Owner: signup's initial setDoc, Buy/Sell balance+holdings updates,
       // Reset Portfolio, profile display-name save, watchlist edits, and
-      // account-deletion's final deleteDoc.
+      // their own Settings > Delete Account flow's final deleteDoc
+      // (src/lib/account.ts).
       // Admin: read access for AdminUsers/AdminUserDetail.
       allow read: if isOwner(uid) || isAdmin();
       allow create: if isOwner(uid);
-      // Owner: their own Settings > Delete Account flow (src/lib/account.ts).
-      // Admin: the "Remove User" tool (src/lib/admin.ts's removeUserAccount),
-      // AdminUsers' inline Remove action — but never against another admin
-      // account, so one admin can't remove another this way. Uses
-      // .get('isAdmin', false) rather than direct `.data.isAdmin` access —
-      // see isAdminAccount() above for why a normal account (where the
-      // field is entirely absent, not just false) needs that.
+      // Owner: their own Settings > Delete Account flow (src/lib/account.ts)
+      // — the only path that ever actually deletes a users/{uid} document.
+      // Admin "Remove User" (src/lib/admin.ts's removeUserAccount) does NOT
+      // delete this document — see the update rule below for why — so this
+      // branch exists for the owner case only; the isAdmin() half is kept
+      // as a historical/defense-in-depth allowance and is not exercised by
+      // any current admin tool. Never against another admin account either
+      // way. Uses .get('isAdmin', false) rather than direct `.data.isAdmin`
+      // access — see isAdminAccount() above for why a normal account (where
+      // the field is entirely absent, not just false) needs that.
       allow delete: if isOwner(uid) || (isAdmin() && resource.data.get('isAdmin', false) != true);
 
       // Owner covers all of the app's own balance/holdings/shorts/profile
@@ -410,13 +414,31 @@ service cloud.firestore {
       // Control mode changes what PRICE a close settles at, never who
       // performs the write, so it never needs a separate admin-write path
       // here.
-      // Admin is granted update access ONLY when the write touches
-      // `balance` and/or `pendingWithdrawalTotal` and nothing else, with
-      // `balance` always left a valid non-negative number — this is
-      // exactly (and only) what the "Adjust Virtual Balance" tool and the
-      // deposit/withdrawal approval flow (src/lib/balanceRequests.ts) do.
-      // An admin can never use this path to touch email, isAdmin,
-      // holdings, shorts, or any other field on another user's document.
+      //
+      // Admin gets exactly two, narrowly-fixed update shapes — nothing else:
+      //
+      // 1. `balance`/`pendingWithdrawalTotal` only, `balance` left a valid
+      //    non-negative number — exactly (and only) what the "Adjust Virtual
+      //    Balance" tool and the deposit/withdrawal approval flow
+      //    (src/lib/balanceRequests.ts) do.
+      // 2. The fixed "deactivate and purge" shape "Remove User"
+      //    (src/lib/admin.ts's removeUserAccount) writes. This project runs
+      //    on Firebase's free Spark plan with no Cloud Functions/Admin SDK
+      //    available, so a client can never actually delete another user's
+      //    Firebase Authentication credentials (only the Admin SDK on a
+      //    trusted backend can, and there is deliberately no such backend
+      //    here) — "Remove User" instead deactivates the account IN PLACE:
+      //    it tombstones this document with accountStatus/accessDisabled/
+      //    deletedAt/deletionReason (which AuthContext.tsx's login guard
+      //    checks to sign a deactivated account back out immediately) and
+      //    zeroes its trading state, rather than deleting the document —
+      //    the document has to keep existing for that guard to have
+      //    something to read. Restricted to exactly this field set, with
+      //    the tombstone values pinned to their required shape, and never
+      //    against another admin account.
+      //
+      // Neither branch ever lets an admin touch email, isAdmin,
+      // displayName, watchlist, or any field outside what's listed above.
       allow update: if isOwner(uid) || (
         isAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -426,6 +448,17 @@ service cloud.firestore {
         (!('pendingWithdrawalTotal' in request.resource.data) ||
           (request.resource.data.pendingWithdrawalTotal is number &&
             request.resource.data.pendingWithdrawalTotal >= 0))
+      ) || (
+        isAdmin() &&
+        resource.data.get('isAdmin', false) != true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'accountStatus', 'deletedAt', 'deletionReason', 'accessDisabled',
+          'balance', 'holdings', 'shorts', 'watchlist', 'totalRealizedPnl', 'pendingWithdrawalTotal'
+        ]) &&
+        request.resource.data.accountStatus == 'deleted' &&
+        request.resource.data.accessDisabled == true &&
+        request.resource.data.balance == 0 &&
+        request.resource.data.pendingWithdrawalTotal == 0
       );
 
       match /transactions/{transactionId} {
@@ -675,6 +708,21 @@ service cloud.firestore {
       // admin-activity viewer is ever built.
       allow read: if false;
       allow update, delete: if false;
+    }
+
+    // One doc per "Remove User" run, keyed by the TARGET's own uid (see
+    // src/lib/admin.ts's removeUserAccount) — a minimal, dedicated audit
+    // trail for the Spark-plan "deactivate and purge" flow, separate from
+    // the general adminActions log above. Deliberately holds only uid/email
+    // snapshot/adminUid/reason/timestamp/status — never KYC document
+    // content or anything else sensitive. adminUid must match the caller,
+    // same accountability rule as adminActions. `update` (not just
+    // `create`) is allowed because a retried run after a partial failure
+    // overwrites the same doc id rather than creating a second one.
+    match /deletionAudit/{targetUid} {
+      allow create, update: if isAdmin() && request.resource.data.adminUid == request.auth.uid;
+      allow read: if false;
+      allow delete: if false;
     }
 
     match /supportMessages/{messageId} {

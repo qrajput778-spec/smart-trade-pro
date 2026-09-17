@@ -31,6 +31,7 @@ import AdminSupport from './pages/admin/AdminSupport'
 import AdminDeposits from './pages/admin/AdminDeposits'
 import AdminWithdrawals from './pages/admin/AdminWithdrawals'
 import AdminKyc from './pages/admin/AdminKyc'
+import AdminCleanup from './pages/admin/AdminCleanup'
 
 /**
  * Renders the single next unseen timed-trade result, if any — mounted once
@@ -173,6 +174,7 @@ export default function App() {
                 <Route path="/admin/deposits" element={<AdminDeposits />} />
                 <Route path="/admin/withdrawals" element={<AdminWithdrawals />} />
                 <Route path="/admin/kyc" element={<AdminKyc />} />
+                <Route path="/admin/cleanup" element={<AdminCleanup />} />
               </Route>
             </Routes>
           </Layout>

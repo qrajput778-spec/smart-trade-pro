@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth'
-import { auth } from '../lib/firebase'
+import { onAuthStateChanged, signOut, type User as FirebaseUser } from 'firebase/auth'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { auth, db } from '../lib/firebase'
 
 interface AuthContextValue {
   user: FirebaseUser | null
@@ -22,6 +23,20 @@ interface AuthContextValue {
    * VerifyEmail.tsx. No-op (returns false) if nobody is signed in.
    */
   refreshEmailVerification: () => Promise<boolean>
+  /**
+   * True once this signed-in user's OWN users/{uid} doc is seen carrying
+   * `accountStatus === 'deleted'` or `accessDisabled === true` — the
+   * tombstone an admin's "Remove User" writes on the Spark plan, where
+   * there is no Admin SDK/backend available to actually delete Firebase
+   * Auth credentials (see src/lib/admin.ts's removeUserAccount). The
+   * moment this flips true, this same effect signs the account back out —
+   * a deactivated account's Firebase Auth credentials remain technically
+   * valid forever on Spark, so this Firestore-driven guard is what actually
+   * keeps it out of the app, on every future sign-in attempt and for the
+   * rest of any session already open elsewhere. Reset to false on the next
+   * successful sign-in (by a different, non-deactivated account).
+   */
+  accountDisabled: boolean
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -29,12 +44,14 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
   emailVerified: false,
   refreshEmailVerification: async () => false,
+  accountDisabled: false,
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<FirebaseUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [emailVerified, setEmailVerified] = useState(false)
+  const [accountDisabled, setAccountDisabled] = useState(false)
 
   useEffect(() => {
     if (!auth) {
@@ -49,9 +66,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // `emailVerified` property comes from.
       setEmailVerified(firebaseUser?.emailVerified ?? false)
       setLoading(false)
+      // A fresh sign-in (including a brand-new, non-deactivated account)
+      // always starts this clean — only the deactivation listener below
+      // ever sets it back to true, for THIS uid, based on real Firestore
+      // data read after this point.
+      if (firebaseUser) setAccountDisabled(false)
     })
     return unsubscribe
   }, [])
+
+  // Watches the signed-in user's OWN profile doc for the "Remove User"
+  // tombstone (see accountDisabled's own doc comment above) and force-signs
+  // them out the moment it appears — live, not just at the next login, so
+  // an account deactivated while already signed in elsewhere loses access
+  // right away too, not just on its next sign-in attempt.
+  useEffect(() => {
+    if (!user || !db || !auth) return
+    const authInstance = auth // narrowed to non-null for the callback below, which TS can't infer through the module-level `let`
+    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+      const data = snapshot.data()
+      const disabled = data?.accountStatus === 'deleted' || data?.accessDisabled === true
+      if (disabled) {
+        setAccountDisabled(true)
+        signOut(authInstance).catch(() => {
+          // Best-effort — even if this particular signOut() call fails,
+          // accountDisabled is already true, and every protected route
+          // guard (ProtectedRoute/AdminRoute) redirects the instant `user`
+          // next becomes null, which the next auth-state event will still
+          // produce for a genuinely revoked/expired session either way.
+        })
+      }
+    })
+    return unsubscribe
+  }, [user])
 
   async function refreshEmailVerification(): Promise<boolean> {
     if (!auth?.currentUser) {
@@ -72,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, emailVerified, refreshEmailVerification }}>
+    <AuthContext.Provider value={{ user, loading, emailVerified, refreshEmailVerification, accountDisabled }}>
       {children}
     </AuthContext.Provider>
   )

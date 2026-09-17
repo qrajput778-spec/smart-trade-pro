@@ -1,7 +1,7 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, getDocs } from 'firebase/firestore'
-import { AlertTriangle, Search, ShieldCheck, UserX } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Search, ShieldCheck, UserX } from 'lucide-react'
 import Card from '../../components/Card'
 import Button from '../../components/Button'
 import TextField from '../../components/TextField'
@@ -40,6 +40,7 @@ export default function AdminUsers() {
   const [removeConfirmText, setRemoveConfirmText] = useState('')
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
+  const [removeSuccess, setRemoveSuccess] = useState<string | null>(null)
 
   function openRemoveDialog(row: AdminUserRow, event: MouseEvent) {
     event.stopPropagation() // don't also trigger the row's own "go to detail" click
@@ -47,6 +48,7 @@ export default function AdminUsers() {
     setRemoveReason('')
     setRemoveConfirmText('')
     setRemoveError(null)
+    setRemoveSuccess(null)
   }
 
   function closeRemoveDialog() {
@@ -63,18 +65,20 @@ export default function AdminUsers() {
     setRemoving(true)
     try {
       await removeUserAccount(adminUser.uid, adminUser.email, removeTarget.uid, removeReason)
-      // Only reached once Firebase Auth deletion AND every piece of this
-      // account's Firestore/Storage data have actually been removed — see
-      // src/lib/admin.ts's removeUserAccount. Never shown for a run that
-      // only got partway (that throws RemoveUserPartialError below instead,
-      // which deliberately keeps the row and the dialog open so the reason
-      // typed in survives a retry click).
+      // Only reached once the account has actually been deactivated
+      // (locked out of the app) AND every piece of its Firestore/Storage
+      // data has actually been purged — see src/lib/admin.ts's
+      // removeUserAccount. Never shown for a run that only got partway
+      // (that throws RemoveUserPartialError below instead, which
+      // deliberately keeps the row and the dialog open so the reason typed
+      // in survives a retry click).
       setRows((prev) => prev.filter((row) => row.uid !== removeTarget.uid))
       closeRemoveDialog()
+      setRemoveSuccess('User access disabled and account data removed successfully.')
     } catch (err) {
       if (err instanceof RemoveUserPartialError) {
-        // The Auth account is already gone — this person can no longer sign
-        // in — but some of their data cleanup failed partway. Keep the row
+        // Access is already disabled — this person can no longer use the
+        // app — but some of their data purge failed partway. Keep the row
         // and the dialog open (with the reason still filled in) so Remove
         // can just be clicked again; every step it retries is a no-op for
         // whatever already succeeded.
@@ -101,19 +105,28 @@ export default function AdminUsers() {
         const snapshot = await getDocs(collection(db!, 'users'))
         if (cancelled) return
         setRows(
-          snapshot.docs.map((docSnapshot) => {
-            const data = docSnapshot.data()
-            const createdAt = data.createdAt
-            return {
-              uid: docSnapshot.id,
-              displayName: typeof data.displayName === 'string' ? data.displayName : '(no name)',
-              email: typeof data.email === 'string' ? data.email : '—',
-              balance: typeof data.balance === 'number' ? data.balance : 0,
-              holdings: (data.holdings as HoldingsMap | undefined) ?? {},
-              createdAt: createdAt && typeof createdAt.toDate === 'function' ? createdAt.toDate() : null,
-              isAdmin: data.isAdmin === true,
-            }
-          }),
+          snapshot.docs
+            // A "Remove User" run on the Spark plan deactivates the target's
+            // doc in place rather than deleting it (see src/lib/admin.ts's
+            // removeUserAccount) — its tombstone otherwise persists forever
+            // and would reappear here on every reload if not filtered out.
+            .filter((docSnapshot) => {
+              const data = docSnapshot.data()
+              return data.accountStatus !== 'deleted' && data.accessDisabled !== true
+            })
+            .map((docSnapshot) => {
+              const data = docSnapshot.data()
+              const createdAt = data.createdAt
+              return {
+                uid: docSnapshot.id,
+                displayName: typeof data.displayName === 'string' ? data.displayName : '(no name)',
+                email: typeof data.email === 'string' ? data.email : '—',
+                balance: typeof data.balance === 'number' ? data.balance : 0,
+                holdings: (data.holdings as HoldingsMap | undefined) ?? {},
+                createdAt: createdAt && typeof createdAt.toDate === 'function' ? createdAt.toDate() : null,
+                isAdmin: data.isAdmin === true,
+              }
+            }),
         )
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -165,6 +178,14 @@ export default function AdminUsers() {
       {error && (
         <Card className="mt-6 border-danger/40">
           <p className="text-sm text-danger">{error}</p>
+        </Card>
+      )}
+
+      {removeSuccess && (
+        <Card className="mt-6 border-success/40">
+          <p className="flex items-center gap-1.5 text-sm text-success">
+            <CheckCircle2 size={16} className="flex-none" /> {removeSuccess}
+          </p>
         </Card>
       )}
 
@@ -247,10 +268,12 @@ export default function AdminUsers() {
               <h3 className="text-lg font-semibold text-text-primary">Remove {removeTarget.displayName}</h3>
             </div>
             <p className="mt-2 text-sm text-text-muted">
-              This permanently deletes {removeTarget.email}'s account: their Firebase sign-in
-              credentials (they will no longer be able to log in at all), balance, holdings, trade
-              and portfolio history, KYC submissions, deposit/withdrawal requests, and support
-              chat — including their uploaded files. This cannot be undone.
+              This permanently removes {removeTarget.email}'s Smart Trade Pro application data —
+              balance, holdings, trade and portfolio history, KYC submissions, deposit/withdrawal
+              requests, and support chat, including their uploaded files — and disables access:
+              they will be signed out immediately and can never log back in. Firebase
+              Authentication credentials cannot be directly deleted from the Spark plan without a
+              trusted backend. This cannot be undone.
             </p>
 
             <div className="mt-4 space-y-3">

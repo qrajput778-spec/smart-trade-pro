@@ -7,7 +7,6 @@
 // (deployed and live).
 
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -17,13 +16,13 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
   type CollectionReference,
   type Firestore,
 } from 'firebase/firestore'
-import { httpsCallable } from 'firebase/functions'
-import { db, functions } from './firebase'
+import { db } from './firebase'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { roundUsd } from './trading'
 import type { TradeOutcomeMode } from '../types'
@@ -141,28 +140,43 @@ export async function setGlobalTradeOutcomeMode(
 }
 
 // ---------------------------------------------------------------------------
-// Remove User — AdminUserDetail's / AdminUsers' Danger Zone.
+// Remove User — AdminUsers' Danger Zone.
 //
-// A COMPLETE, permanent deletion has two halves that run in a deliberate
-// order — Auth first, then data — because they fail differently:
+// This project runs on Firebase's free SPARK plan, deliberately, with no
+// Cloud Functions/Cloud Run/Admin SDK anywhere (all of those require the
+// paid Blaze plan — see functions/README.md for the earlier attempt and
+// exactly where it hit that wall). That means there is NO trusted backend
+// capable of calling admin.auth().deleteUser() on a DIFFERENT user's
+// behalf — only the Admin SDK can delete another user's Firebase
+// Authentication credentials, a signed-in browser client never can, no
+// matter who's signed in. This code does not attempt it, and never claims
+// to have done it.
 //
-//   1. The Firebase Authentication account. A signed-in client — even an
-//      admin's — cannot delete a DIFFERENT user's Auth credentials itself;
-//      only the Admin SDK can, and that must run on a trusted server. This
-//      calls the deleteUserAuthAccount Cloud Function (functions/src/index.ts)
-//      for exactly that. If this step fails, NOTHING else runs — no
-//      Firestore or Storage data is touched — so a failure here can never
-//      leave the account able to log in AND missing its own history at the
-//      same time.
-//   2. Every Firestore document and Supabase Storage file this account
-//      owns. Only attempted once step 1 has actually succeeded, so
-//      "success" is never reported for a run that only wiped local data —
-//      see removeUserAccount's return value and the RemoveUserPartialError
-//      it throws if this half fails partway.
+// What "Remove User" does instead — a Spark-compatible "deactivate and
+// purge" — in two deliberately ordered halves:
 //
-// Both halves are safe to retry: deleteUserAuthAccount treats an
-// already-deleted target as success (see its own comment), and every
-// Firestore/Storage delete below is naturally idempotent — deleting an
+//   1. DEACTIVATE. One Firestore update on the target's own users/{uid}
+//      doc: tombstones it with accountStatus: 'deleted' / accessDisabled:
+//      true / deletedAt / deletionReason, and zeroes its trading state
+//      (balance, holdings, shorts, watchlist, totalRealizedPnl,
+//      pendingWithdrawalTotal) — see firestore.rules' matching users/{uid}
+//      update rule for the exact fixed shape this is restricted to. The
+//      document is NOT deleted: AuthContext.tsx's login guard needs
+//      something to read accountStatus/accessDisabled from, for every
+//      future sign-in attempt this uid ever makes, for as long as the
+//      account exists in Firebase Auth (which is forever, on Spark). Done
+//      FIRST and must succeed before anything else runs, so the account is
+//      guaranteed to already be locked out of the app before any of its
+//      other data is touched.
+//   2. PURGE. Every other Firestore document and Supabase Storage file
+//      this account owns. Only attempted once step 1 has actually
+//      succeeded, so "success" is never reported for a run that failed to
+//      even deactivate the account — see removeUserAccount's return value
+//      and the RemoveUserPartialError it throws if this half fails partway.
+//
+// Both halves are safe to retry: step 1 is a plain Firestore update that
+// simply re-writes the same tombstone values if run again, and every
+// Firestore/Storage delete in step 2 is naturally idempotent — deleting an
 // already-gone document or object is a no-op, not an error.
 // ---------------------------------------------------------------------------
 
@@ -188,7 +202,7 @@ export interface RemoveUserResult {
   }
 }
 
-/** Thrown ONLY when the Auth account was already successfully deleted but the data cleanup afterward failed partway. Never a plain AdminActionError — the caller must not treat this as a normal, retry-from-scratch failure. */
+/** Thrown ONLY when the account was already successfully deactivated (locked out) but the data purge afterward failed partway. Never a plain AdminActionError — the caller must not treat this as a normal, retry-from-scratch failure. */
 export class RemoveUserPartialError extends AdminActionError {
   constructor(message: string) {
     super(message)
@@ -218,35 +232,7 @@ function collectKycStoragePaths(data: Record<string, unknown>): string[] {
   return paths
 }
 
-// Maps deleteUserAuthAccount's possible failure codes to a plain-language
-// message — same reasoning as src/lib/authErrors.ts: never show raw
-// "Firebase: ..." or bare Functions error codes to an admin. `failed-precondition`
-// and `permission-denied` already carry the Cloud Function's own specific,
-// user-safe message (see functions/src/index.ts) via `err.message`, so those
-// pass it straight through instead of a generic one.
-function getRemoveUserFunctionErrorMessage(code: string | null, err: unknown): string {
-  const rawMessage =
-    typeof err === 'object' && err !== null && 'message' in err && typeof (err as { message: unknown }).message === 'string'
-      ? (err as { message: string }).message
-      : null
-
-  switch (code) {
-    case 'functions/not-found':
-      return 'The account-deletion server function is not deployed yet — see functions/README.md, then try again.'
-    case 'functions/unavailable':
-    case 'functions/deadline-exceeded':
-      return 'Could not reach the account-deletion server function — check your connection and try again.'
-    case 'functions/permission-denied':
-    case 'functions/unauthenticated':
-      return rawMessage ?? 'You are not authorized to perform this action.'
-    case 'functions/failed-precondition':
-      return rawMessage ?? 'This account cannot be removed from here.'
-    default:
-      return rawMessage ?? 'Could not delete the Firebase Authentication account — nothing was removed. Please try again.'
-  }
-}
-
-/** Best-effort Supabase Storage removal — logs and swallows failures so a Storage hiccup never blocks the Firestore cleanup that follows it. Never throws. */
+/** Best-effort Supabase Storage removal — logs and swallows failures so a Storage hiccup never blocks the Firestore cleanup that follows it. Never throws. Uses only the publishable anon key already wired up in src/lib/supabase.ts and the buckets' own delete policies (SUPABASE_STORAGE_SETUP.md) — no service-role key anywhere in this codebase. */
 async function removeStorageFiles(bucket: string, paths: string[]): Promise<void> {
   if (paths.length === 0) return
   try {
@@ -263,27 +249,38 @@ async function removeStorageFiles(bucket: string, paths: string[]): Promise<void
 }
 
 /**
- * Permanently removes a user's ENTIRE Smart Trade Pro account:
+ * Permanently removes a user's Smart Trade Pro account on the Spark plan —
+ * "deactivate and purge" (see the section comment above for the full
+ * reasoning and why this is the correct, honest design here):
  *
- *  1. Their Firebase Authentication account (via the deleteUserAuthAccount
- *     Cloud Function — see the section comment above) — done FIRST and
- *     required to succeed before anything else runs, so this account can
- *     never sign in again by the time any of their data is touched.
- *  2. Their Firestore profile doc, transactions/portfolioSnapshots/
- *     timedTrades subcollections, support chat thread + messages, every
- *     kycSubmissions doc naming them, and every balanceRequests doc naming
- *     them.
- *  3. Their private files in Supabase Storage: every KYC document these
- *     submissions pointed at, and every image attachment their support
- *     messages pointed at — always by the exact storagePath/imagePath
- *     already stored on that document, never a guessed path, and always
- *     scoped to files this specific user's own records named.
+ *  1. Deactivates users/{uid} in place: accountStatus/accessDisabled/
+ *     deletedAt/deletionReason, plus zeroing balance/holdings/shorts/
+ *     watchlist/totalRealizedPnl/pendingWithdrawalTotal. Required to
+ *     succeed before anything else runs.
+ *  2. Deletes transactions/portfolioSnapshots/timedTrades subcollections,
+ *     the support chat thread + messages, every kycSubmissions doc naming
+ *     them, and every balanceRequests doc naming them.
+ *  3. Deletes their private files in Supabase Storage: every KYC document
+ *     these submissions pointed at, and every image attachment their
+ *     support messages pointed at — always by the exact storagePath/
+ *     imagePath already stored on that document, never a guessed path.
+ *  4. Records a minimal deletionAudit/{targetUid} entry — target uid,
+ *     email snapshot, admin uid, reason, timestamp, status. Never KYC
+ *     document content or anything else sensitive.
+ *
+ * This does NOT and CANNOT delete the target's Firebase Authentication
+ * credentials — that requires the Admin SDK on a trusted server, which this
+ * Spark-plan project deliberately has none of (see the section comment).
+ * The account is instead locked out at the application layer: once
+ * deactivated, AuthContext.tsx's login guard signs it back out immediately
+ * on every future sign-in attempt, forever, for as long as this account
+ * exists in Firebase Auth.
  *
  * Refuses to run against another admin account or the caller's own account
  * (an admin removes themselves via Settings like everyone else, not here) —
- * both the Cloud Function and firestore.rules enforce the "never another
- * admin" half of that server-side too, so these client-side checks are
- * defense-in-depth (a fast, friendly error), never the only guard.
+ * firestore.rules enforces the "never another admin" half of that
+ * server-side too, so this client-side check is defense-in-depth (a fast,
+ * friendly error), never the only guard.
  */
 export async function removeUserAccount(
   adminUid: string,
@@ -311,29 +308,40 @@ export async function removeUserAccount(
     throw new AdminActionError('Another admin account cannot be removed from here.')
   }
   const targetEmail = typeof targetData.email === 'string' ? targetData.email : '—'
+  // Idempotency: if this account is already deactivated (a previous run got
+  // at least this far), skip straight to the purge below rather than
+  // re-writing the same tombstone values — either way, step 1 below is
+  // itself a no-op-safe write if it does run again.
+  const alreadyDeactivated = targetData.accountStatus === 'deleted' || targetData.accessDisabled === true
 
-  // ---- Step 1: Firebase Authentication — must succeed before anything
-  // below runs. Nothing is deleted yet if this throws. ----
-  if (!functions) {
-    throw new AdminActionError(
-      'The account-deletion server function is not configured yet — deploy functions/ (see its README) before removing users.',
-    )
-  }
-  try {
-    await httpsCallable<{ targetUid: string }, { success: true; alreadyDeleted: boolean }>(
-      functions,
-      'deleteUserAuthAccount',
-    )({ targetUid })
-  } catch (err) {
-    const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : null
-    // eslint-disable-next-line no-console
-    console.error('[admin] deleteUserAuthAccount call failed', { targetUid, code })
-    throw new AdminActionError(getRemoveUserFunctionErrorMessage(code, err))
+  // ---- Step 1: deactivate — must succeed before anything below runs. ----
+  if (!alreadyDeactivated) {
+    try {
+      await updateDoc(targetRef, {
+        accountStatus: 'deleted',
+        deletedAt: serverTimestamp(),
+        deletionReason: trimmedReason,
+        accessDisabled: true,
+        balance: 0,
+        holdings: {},
+        shorts: {},
+        watchlist: [],
+        totalRealizedPnl: 0,
+        pendingWithdrawalTotal: 0,
+      })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[admin] removeUserAccount: deactivation write failed — nothing was changed', {
+        targetUid,
+        message: err instanceof Error ? err.message : String(err),
+      })
+      throw new AdminActionError('Could not disable this account — nothing was changed. Please try again.')
+    }
   }
 
-  // ---- Step 2 onward: the Auth account is confirmed gone. From here, any
-  // failure is reported as a PARTIAL removal, never a plain retry-from-
-  // scratch failure — the user can no longer log in either way. ----
+  // ---- Step 2 onward: the account is confirmed locked out already. From
+  // here, any failure is reported as a PARTIAL removal, never a plain
+  // retry-from-scratch failure — access is already disabled either way. ----
   try {
     const deletedCounts = {
       transactions: 0,
@@ -397,29 +405,29 @@ export async function removeUserAccount(
     }
     deletedCounts.balanceRequests = balanceRequestsSnapshot.docs.length
 
-    await deleteDoc(targetRef)
-
-    // Logged last, only once the removal actually completed — see
-    // adjustUserBalance above for the same "adminUid must match the caller"
-    // rule this relies on (firestore.rules' adminActions/{actionId}).
-    // Deliberately non-fatal: by this point the account and every piece of
-    // its data are genuinely, fully gone — a hiccup writing the audit
-    // record afterward must never surface as "partial removal, please
-    // retry" (retrying would just fail with "Target account not found",
-    // confusingly, since there's truly nothing left to clean up).
+    // Minimal, dedicated audit record — see firestore.rules' deletionAudit
+    // match and the file-level comment for exactly what this deliberately
+    // does and doesn't store. Keyed by the target's own uid so a retried
+    // run overwrites the same doc rather than piling up duplicates.
+    // Deliberately non-fatal, same reasoning as adjustUserBalance's own
+    // record: by this point the account is genuinely deactivated and its
+    // data genuinely purged — a hiccup writing the audit record afterward
+    // must never surface as "partial removal, please retry" (retrying would
+    // just re-run a no-op purge, confusingly, since there's truly nothing
+    // left to clean up).
     try {
-      await addDoc(collection(firestore, 'adminActions'), {
-        adminUid,
-        adminEmail: adminEmail ?? null,
+      await setDoc(doc(firestore, 'deletionAudit', targetUid), {
         targetUid,
         targetEmail,
-        action: 'REMOVE_USER',
+        adminUid,
+        adminEmail: adminEmail ?? null,
         reason: trimmedReason,
+        status: 'completed',
         timestamp: serverTimestamp(),
       })
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('[admin] removeUserAccount: succeeded but the adminActions log write failed', {
+      console.error('[admin] removeUserAccount: succeeded but the deletionAudit write failed', {
         targetUid,
         message: err instanceof Error ? err.message : String(err),
       })
@@ -428,13 +436,28 @@ export async function removeUserAccount(
     return { targetEmail, deletedCounts }
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('[admin] removeUserAccount: data cleanup failed after Auth deletion succeeded', {
+    console.error('[admin] removeUserAccount: data purge failed after deactivation succeeded', {
       targetUid,
       message: err instanceof Error ? err.message : String(err),
     })
+    // Best-effort — recording that this run at least got the account locked
+    // out is more useful than losing that fact entirely if this also fails.
+    await setDoc(
+      doc(firestore, 'deletionAudit', targetUid),
+      {
+        targetUid,
+        targetEmail,
+        adminUid,
+        adminEmail: adminEmail ?? null,
+        reason: trimmedReason,
+        status: 'partial',
+        timestamp: serverTimestamp(),
+      },
+      { merge: true },
+    ).catch(() => {})
     throw new RemoveUserPartialError(
-      `${targetEmail}'s sign-in has been permanently revoked, but cleaning up their remaining data failed partway ` +
-        'through. It is safe to run Remove again — already-deleted records are simply skipped — to finish the cleanup.',
+      `${targetEmail}'s access has been permanently disabled, but purging their remaining data failed partway ` +
+        'through. It is safe to run Remove again — already-purged records are simply skipped — to finish the cleanup.',
     )
   }
 }

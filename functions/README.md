@@ -59,7 +59,24 @@ required first.
 firebase functions:list
 ```
 
-should show `deleteUserAuthAccount` (v2, callable, HTTPS).
+should show `deleteUserAuthAccount` (v2, callable, HTTPS). `firebase functions:list` printing
+**"No functions found"** means exactly what it says — nothing is deployed, regardless of what's
+sitting in this directory.
+
+## Symptom if this was never deployed: "internal [0]"
+
+If Admin → Users → Remove shows the raw text **"internal [0]"**, that is the
+`@firebase/functions` client SDK's own generic message for "the browser's request never got
+*any* HTTP response back" (see its `_errorForResponse`/`codeForHTTPStatus`: HTTP status `0` maps
+to code `internal`, and with no response body to read a real message from, the SDK falls back to
+literally `${code} [${httpStatus}]`). In this project that has one cause: **no Cloud Function is
+deployed at this project/region**, so the callable request has nowhere to land — confirmed by
+`firebase functions:list` returning "No functions found." It is not a rejection from this
+function's own code (a real `HttpsError` thrown here arrives with its actual message intact, not
+this synthesized `"code [status]"` shape) — nothing is broken in `src/index.ts` or
+`src/lib/admin.ts`; the backend simply isn't live yet. Complete the Blaze upgrade above, then
+`firebase deploy --only functions` — that error can't happen once a real deployment exists to
+answer the request.
 
 ## What it does NOT do
 

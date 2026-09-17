@@ -8,6 +8,7 @@ import {
   LineChart,
   MessageCircle,
   SlidersHorizontal,
+  Trash2,
   Users,
   X,
 } from 'lucide-react'
@@ -49,6 +50,10 @@ const NAV_GROUPS: AdminNavGroup[] = [
       { label: 'Withdrawals', to: '/admin/withdrawals', icon: ArrowUpFromLine },
       { label: 'KYC Verification', to: '/admin/kyc', icon: BadgeCheck },
     ],
+  },
+  {
+    label: 'System',
+    items: [{ label: 'Test Data Cleanup', to: '/admin/cleanup', icon: Trash2 }],
   },
 ]
 

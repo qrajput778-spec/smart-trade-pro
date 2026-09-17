@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '../lib/firebase'
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
+import { auth, db } from '../lib/firebase'
 import { useAuth } from '../context/AuthContext'
 import { getAuthErrorMessage } from '../lib/authErrors'
 import Card from '../components/Card'
@@ -9,6 +10,11 @@ import Button from '../components/Button'
 import TextField from '../components/TextField'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Exact wording required for a "Remove User"-deactivated account — see
+// src/lib/admin.ts's removeUserAccount and AuthContext.tsx's accountDisabled.
+const ACCOUNT_DISABLED_MESSAGE =
+  'This account has been permanently disabled. Please contact support if you believe this was a mistake.'
 
 interface FormErrors {
   email?: string
@@ -20,13 +26,23 @@ type ResetState = 'idle' | 'sending' | 'sent'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { refreshEmailVerification } = useAuth()
+  const { refreshEmailVerification, accountDisabled } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [resetState, setResetState] = useState<ResetState>('idle')
   const [resetError, setResetError] = useState<string | null>(null)
+
+  // Covers the case where this account was deactivated by an admin WHILE it
+  // was already signed in on some other page — AuthContext's own listener
+  // force-signs it out and lands here; this just surfaces the same required
+  // message once that happens, rather than a silent, unexplained logout.
+  useEffect(() => {
+    if (accountDisabled) {
+      setErrors({ form: ACCOUNT_DISABLED_MESSAGE })
+    }
+  }, [accountDisabled])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -46,7 +62,24 @@ export default function Login() {
 
     setSubmitting(true)
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      const credential = await signInWithEmailAndPassword(auth, email, password)
+
+      // Firebase Auth credentials for a "Remove User"-deactivated account
+      // are still technically valid on the Spark plan (there is no backend
+      // able to actually delete them) — so this check, straight against
+      // Firestore, is what actually blocks the login. Checked BEFORE the
+      // emailVerified flow below: a disabled account should never be routed
+      // to /verify-email or /dashboard no matter its verification status.
+      if (db) {
+        const profileSnapshot = await getDoc(doc(db, 'users', credential.user.uid))
+        const profileData = profileSnapshot.data()
+        if (profileData?.accountStatus === 'deleted' || profileData?.accessDisabled === true) {
+          await signOut(auth)
+          setErrors({ form: ACCOUNT_DISABLED_MESSAGE })
+          return
+        }
+      }
+
       // Never trust the emailVerified value carried over from before this
       // sign-in — reload from the server (via the same AuthContext helper
       // ProtectedRoute/VerifyEmail read from, so its state stays in sync
